@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from app.services.labgrid_client import LabgridClient
 
-router = APIRouter(prefix="/api", tags=["health"])
+router = APIRouter(tags=["health"])
 
 
 class HealthResponse(BaseModel):
