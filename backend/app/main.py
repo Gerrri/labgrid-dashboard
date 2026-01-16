@@ -12,8 +12,12 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health_router
-from app.api.routes.health import set_labgrid_client
+from app.api import api_router
+from app.api.routes.health import set_labgrid_client as set_health_labgrid_client
+from app.api.routes.targets import set_command_service as set_targets_command_service
+from app.api.routes.targets import set_labgrid_client as set_targets_labgrid_client
+from app.api.websocket import set_command_service as set_ws_command_service
+from app.api.websocket import set_labgrid_client as set_ws_labgrid_client
 from app.config import get_settings
 from app.services.command_service import CommandService
 from app.services.labgrid_client import LabgridClient
@@ -57,8 +61,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     await labgrid_client.connect()
 
-    # Set the client for the health endpoint
-    set_labgrid_client(labgrid_client)
+    # Set the client and service instances for all modules
+    set_health_labgrid_client(labgrid_client)
+    set_targets_labgrid_client(labgrid_client)
+    set_targets_command_service(command_service)
+    set_ws_labgrid_client(labgrid_client)
+    set_ws_command_service(command_service)
 
     logger.info("Labgrid Dashboard Backend started successfully")
 
@@ -97,8 +105,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Register routers
-    app.include_router(health_router)
+    # Register main API router (includes all sub-routers)
+    app.include_router(api_router)
 
     @app.get("/")
     async def root():
@@ -107,6 +115,8 @@ def create_app() -> FastAPI:
             "message": "Labgrid Dashboard API",
             "docs": "/docs",
             "health": "/api/health",
+            "targets": "/api/targets",
+            "websocket": "/api/ws",
         }
 
     return app
