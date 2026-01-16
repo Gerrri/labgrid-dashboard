@@ -11,6 +11,12 @@
   --color-hover: #f1f5f9;
   --color-details-bg: #f8fafc;
   --color-code-bg: #f1f5f9;
+  --color-success: #22c55e;
+  --color-success-bg: rgba(34, 197, 94, 0.1);
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.1);
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.1);
 
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -40,6 +46,12 @@
     --color-hover: #334155;
     --color-details-bg: #1e293b;
     --color-code-bg: #0f172a;
+    --color-success: #4ade80;
+    --color-success-bg: rgba(74, 222, 128, 0.15);
+    --color-error: #f87171;
+    --color-error-bg: rgba(248, 113, 113, 0.15);
+    --color-warning: #fbbf24;
+    --color-warning-bg: rgba(251, 191, 36, 0.15);
   }
 }
 

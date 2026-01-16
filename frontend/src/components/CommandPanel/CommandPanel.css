@@ -1,0 +1,246 @@
+/* Command Panel Styles */
+.command-panel {
+  padding: 1rem;
+  background-color: var(--color-surface);
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+}
+
+.command-panel.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+}
+
+.command-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.command-panel-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.btn-clear {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  color: var(--color-muted);
+  transition: all 0.15s ease;
+}
+
+.btn-clear:hover {
+  background-color: var(--color-hover);
+  color: var(--color-text);
+}
+
+/* Loading Spinner */
+.loading-spinner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-muted);
+}
+
+.spinner-icon {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error Message */
+.command-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.375rem;
+  color: #ef4444;
+  font-size: 0.875rem;
+}
+
+.error-icon {
+  flex-shrink: 0;
+}
+
+/* Command Buttons */
+.command-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.command-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.command-button:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+  transform: translateY(-1px);
+}
+
+.command-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.command-button.executing {
+  background-color: var(--color-muted);
+}
+
+.command-button .spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+.command-icon {
+  font-size: 0.75rem;
+}
+
+.no-commands {
+  color: var(--color-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Output Section */
+.command-output-section {
+  margin-top: 1rem;
+}
+
+/* Output Viewer */
+.output-viewer {
+  background-color: #1e1e1e;
+  border-radius: 0.5rem;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+}
+
+.output-viewer.empty {
+  padding: 2rem;
+  text-align: center;
+}
+
+.no-output {
+  color: #6b7280;
+  margin: 0;
+}
+
+.output-entry {
+  border-bottom: 1px solid #374151;
+}
+
+.output-entry:last-child {
+  border-bottom: none;
+}
+
+.output-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: #2d2d2d;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.output-command {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.output-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.75rem;
+}
+
+.exit-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.exit-code.success {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.exit-code.error {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.timestamp {
+  color: #9ca3af;
+}
+
+.output-content {
+  margin: 0;
+  padding: 1rem;
+  color: #e5e7eb;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  background-color: #1e1e1e;
+}
+
+/* Responsive styles */
+@media (max-width: 640px) {
+  .command-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .command-buttons {
+    flex-direction: column;
+  }
+
+  .command-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .output-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

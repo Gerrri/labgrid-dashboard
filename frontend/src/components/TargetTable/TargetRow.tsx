@@ -1,19 +1,25 @@
 import { useState } from 'react';
-import type { Target } from '../../types';
+import type { Target, CommandOutput } from '../../types';
 import { StatusBadge } from './StatusBadge';
+import { CommandPanel } from '../CommandPanel';
 
 interface TargetRowProps {
   target: Target;
+  onCommandComplete?: (targetName: string, output: CommandOutput) => void;
 }
 
 /**
  * Single row displaying target information
  */
-export function TargetRow({ target }: TargetRowProps) {
+export function TargetRow({ target, onCommandComplete }: TargetRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const toggleExpand = () => {
     setExpanded((prev) => !prev);
+  };
+
+  const handleCommandComplete = (output: CommandOutput) => {
+    onCommandComplete?.(target.name, output);
   };
 
   const renderIpAddress = () => {
@@ -36,6 +42,8 @@ export function TargetRow({ target }: TargetRowProps) {
 
     return <span>{target.ip_address}</span>;
   };
+
+  const canExecuteCommands = target.status !== 'offline';
 
   return (
     <>
@@ -63,6 +71,7 @@ export function TargetRow({ target }: TargetRowProps) {
         <tr className="target-details-row">
           <td colSpan={5}>
             <div className="target-details">
+              {/* Resources Section */}
               <div className="details-section">
                 <h4>Resources ({target.resources.length})</h4>
                 {target.resources.length > 0 ? (
@@ -83,29 +92,22 @@ export function TargetRow({ target }: TargetRowProps) {
                 )}
               </div>
 
-              {target.last_command_outputs.length > 0 && (
-                <div className="details-section">
-                  <h4>Last Command Outputs</h4>
-                  <div className="command-outputs">
-                    {target.last_command_outputs.map((output, index) => (
-                      <div key={index} className="command-output">
-                        <div className="command-header">
-                          <code>{output.command}</code>
-                          <span
-                            className={`exit-code ${output.exit_code === 0 ? 'success' : 'error'}`}
-                          >
-                            Exit: {output.exit_code}
-                          </span>
-                          <span className="timestamp">
-                            {new Date(output.timestamp).toLocaleString()}
-                          </span>
-                        </div>
-                        <pre className="command-output-text">{output.output}</pre>
-                      </div>
-                    ))}
+              {/* Command Panel Section */}
+              <div className="details-section">
+                {canExecuteCommands ? (
+                  <CommandPanel
+                    targetName={target.name}
+                    initialOutputs={target.last_command_outputs}
+                    onCommandComplete={handleCommandComplete}
+                  />
+                ) : (
+                  <div className="commands-offline">
+                    <p className="text-muted">
+                      Commands unavailable - target is offline
+                    </p>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </td>
         </tr>
