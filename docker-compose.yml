@@ -1,0 +1,69 @@
+# Labgrid Dashboard - Docker Compose Configuration
+# Development environment with Labgrid Coordinator, Backend, and Frontend
+
+version: "3.8"
+
+services:
+  # Labgrid Coordinator - WAMP router for Labgrid communication
+  coordinator:
+    build:
+      context: ./docker/coordinator
+      dockerfile: Dockerfile
+    container_name: labgrid-coordinator
+    ports:
+      - "20408:20408"
+    networks:
+      - labgrid-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 20408)); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # FastAPI Backend - REST API and WebSocket server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: labgrid-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - LABGRID_COORDINATOR_HOST=coordinator
+      - LABGRID_COORDINATOR_PORT=20408
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - labgrid-network
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
+  # React Frontend - Development server
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: labgrid-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_WS_URL=ws://localhost:8000/ws
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
+    networks:
+      - labgrid-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+networks:
+  labgrid-network:
+    driver: bridge
+    name: labgrid-network

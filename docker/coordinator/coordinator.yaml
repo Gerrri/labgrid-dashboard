@@ -1,0 +1,25 @@
+# Labgrid Coordinator Configuration
+# This configuration is used by the labgrid-coordinator service
+
+# Crossbar.io router configuration for WAMP protocol
+crossbar:
+  # Bind address and port
+  bind: "0.0.0.0"
+  port: 20408
+  
+  # Realm for WAMP communication
+  realm: "realm1"
+  
+  # Authentication (none for development)
+  auth: null
+
+# Coordinator settings
+coordinator:
+  # Enable debug logging
+  debug: true
+  
+  # Resource timeout (seconds)
+  resource_timeout: 300
+  
+  # Place timeout (seconds)  
+  place_timeout: 300
