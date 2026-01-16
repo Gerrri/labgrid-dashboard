@@ -1,0 +1,23 @@
+# FastAPI framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# WAMP client for Labgrid Coordinator communication
+autobahn>=23.6.2
+txaio>=23.1.1
+
+# Pydantic for data validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# YAML configuration parsing
+pyyaml>=6.0.1
+
+# WebSocket support
+websockets>=12.0
+
+# HTTP client for testing
+httpx>=0.25.0
+
+# Development dependencies
+python-dotenv>=1.0.0
