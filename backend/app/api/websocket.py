@@ -1,0 +1,242 @@
+"""
+WebSocket endpoint for real-time communication.
+"""
+
+import json
+import logging
+from datetime import datetime
+from typing import Any, Dict
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.api.connection_manager import manager
+from app.models.target import CommandOutput
+from app.services.command_service import CommandService
+from app.services.labgrid_client import LabgridClient
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+# Global instances - will be set by main app
+_labgrid_client: LabgridClient | None = None
+_command_service: CommandService | None = None
+
+
+def set_labgrid_client(client: LabgridClient) -> None:
+    """Set the global Labgrid client instance."""
+    global _labgrid_client
+    _labgrid_client = client
+
+
+def set_command_service(service: CommandService) -> None:
+    """Set the global command service instance."""
+    global _command_service
+    _command_service = service
+
+
+async def handle_subscribe(websocket: WebSocket, data: Dict[str, Any]) -> None:
+    """Handle subscribe message from client.
+
+    Args:
+        websocket: The WebSocket connection.
+        data: Message data containing targets to subscribe to.
+    """
+    targets = data.get("targets", ["all"])
+    manager.subscribe(websocket, targets)
+
+    # Send initial targets list
+    if _labgrid_client:
+        targets_list = await _labgrid_client.get_places()
+        await manager.send_to(
+            websocket,
+            {
+                "type": "targets_list",
+                "data": [t.model_dump() for t in targets_list],
+            },
+        )
+    logger.info(f"Client subscribed to: {targets}")
+
+
+async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> None:
+    """Handle execute_command message from client.
+
+    Args:
+        websocket: The WebSocket connection.
+        data: Message data containing target and command_name.
+    """
+    target_name = data.get("target")
+    command_name = data.get("command_name")
+
+    if not target_name or not command_name:
+        await manager.send_to(
+            websocket,
+            {
+                "type": "error",
+                "data": {"detail": "Missing target or command_name"},
+            },
+        )
+        return
+
+    if not _labgrid_client or not _command_service:
+        await manager.send_to(
+            websocket,
+            {
+                "type": "error",
+                "data": {"detail": "Services not initialized"},
+            },
+        )
+        return
+
+    # Verify target exists
+    target = await _labgrid_client.get_place_info(target_name)
+    if target is None:
+        await manager.send_to(
+            websocket,
+            {
+                "type": "error",
+                "data": {"detail": f"Target '{target_name}' not found"},
+            },
+        )
+        return
+
+    # Get the command from configuration
+    command = _command_service.get_command_by_name(command_name)
+    if command is None:
+        await manager.send_to(
+            websocket,
+            {
+                "type": "error",
+                "data": {"detail": f"Command '{command_name}' not found in configuration"},
+            },
+        )
+        return
+
+    # Execute the command (mock for now)
+    logger.info(f"Executing command '{command.name}' on target '{target_name}' via WebSocket")
+
+    output = CommandOutput(
+        command=command.command,
+        output=f"[Mock] Executed '{command.command}' on {target_name}\nOutput would appear here.",
+        timestamp=datetime.utcnow(),
+        exit_code=0,
+    )
+
+    # Send output to the requesting client
+    await manager.send_to(
+        websocket,
+        {
+            "type": "command_output",
+            "data": {
+                "target": target_name,
+                "output": output.model_dump(),
+            },
+        },
+    )
+
+    # Broadcast command output to all subscribed clients
+    await manager.broadcast_to_subscribed(
+        {
+            "type": "command_output",
+            "data": {
+                "target": target_name,
+                "output": output.model_dump(),
+            },
+        },
+        target_name,
+    )
+
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time updates.
+
+    Events Server -> Client:
+    - {"type": "target_update", "data": Target}
+    - {"type": "command_output", "data": {"target": str, "output": CommandOutput}}
+    - {"type": "targets_list", "data": List[Target]}
+    - {"type": "error", "data": {"detail": str}}
+
+    Events Client -> Server:
+    - {"type": "subscribe", "targets": ["all"] | List[str]}
+    - {"type": "execute_command", "target": str, "command_name": str}
+    """
+    await manager.connect(websocket)
+
+    try:
+        # Send initial targets list on connection
+        if _labgrid_client:
+            targets_list = await _labgrid_client.get_places()
+            await manager.send_to(
+                websocket,
+                {
+                    "type": "targets_list",
+                    "data": [t.model_dump() for t in targets_list],
+                },
+            )
+
+        while True:
+            # Receive message from client
+            data = await websocket.receive_text()
+
+            try:
+                message = json.loads(data)
+                msg_type = message.get("type")
+
+                if msg_type == "subscribe":
+                    await handle_subscribe(websocket, message)
+                elif msg_type == "execute_command":
+                    await handle_execute_command(websocket, message)
+                else:
+                    logger.warning(f"Unknown message type: {msg_type}")
+                    await manager.send_to(
+                        websocket,
+                        {
+                            "type": "error",
+                            "data": {"detail": f"Unknown message type: {msg_type}"},
+                        },
+                    )
+
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON received: {data}")
+                await manager.send_to(
+                    websocket,
+                    {
+                        "type": "error",
+                        "data": {"detail": "Invalid JSON message"},
+                    },
+                )
+
+    except WebSocketDisconnect:
+        await manager.disconnect(websocket)
+        logger.info("WebSocket client disconnected")
+
+
+async def broadcast_target_update(target_data: Dict[str, Any]) -> None:
+    """Broadcast a target update to all connected clients.
+
+    This function is called by the Labgrid client when it receives updates.
+
+    Args:
+        target_data: The target data to broadcast.
+    """
+    target_name = target_data.get("name", "")
+    await manager.broadcast_to_subscribed(
+        {
+            "type": "target_update",
+            "data": target_data,
+        },
+        target_name,
+    )
+
+
+async def broadcast_targets_list() -> None:
+    """Broadcast current targets list to all connected clients."""
+    if _labgrid_client:
+        targets_list = await _labgrid_client.get_places()
+        await manager.broadcast(
+            {
+                "type": "targets_list",
+                "data": [t.model_dump() for t in targets_list],
+            },
+        )
