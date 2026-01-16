@@ -1,0 +1,43 @@
+# Labgrid Dashboard - Predefined Commands Configuration
+#
+# This file defines the commands that can be executed on targets through the dashboard.
+# Each command has a name, the actual shell command, and a description.
+
+commands:
+  - name: "Linux Version"
+    command: "cat /etc/os-release"
+    description: "Shows the Linux distribution"
+
+  - name: "System Time"
+    command: "date"
+    description: "Current system time"
+
+  - name: "Kernel Version"
+    command: "uname -a"
+    description: "Kernel and system info"
+
+  - name: "Uptime"
+    command: "uptime"
+    description: "System uptime"
+
+  - name: "Disk Usage"
+    command: "df -h"
+    description: "Disk usage information"
+
+  - name: "Memory Info"
+    command: "free -h"
+    description: "Memory usage information"
+
+  - name: "Network Interfaces"
+    command: "ip addr"
+    description: "Network interface configuration"
+
+  - name: "Process List"
+    command: "ps aux --sort=-%mem | head -20"
+    description: "Top 20 processes by memory usage"
+
+# Commands that should be auto-refreshed when a target is viewed
+auto_refresh_commands:
+  - "Linux Version"
+  - "System Time"
+  - "Uptime"
