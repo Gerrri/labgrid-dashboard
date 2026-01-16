@@ -1,16 +1,21 @@
-import type { Target } from '../../types';
+import type { Target, CommandOutput } from '../../types';
 import { TargetRow } from './TargetRow';
 import './TargetTable.css';
 
 interface TargetTableProps {
   targets: Target[];
   loading?: boolean;
+  onCommandComplete?: (targetName: string, output: CommandOutput) => void;
 }
 
 /**
  * Main table component displaying all targets
  */
-export function TargetTable({ targets, loading = false }: TargetTableProps) {
+export function TargetTable({
+  targets,
+  loading = false,
+  onCommandComplete,
+}: TargetTableProps) {
   if (loading) {
     return (
       <div className="target-table-loading">
@@ -42,7 +47,11 @@ export function TargetTable({ targets, loading = false }: TargetTableProps) {
         </thead>
         <tbody>
           {targets.map((target) => (
-            <TargetRow key={target.name} target={target} />
+            <TargetRow
+              key={target.name}
+              target={target}
+              onCommandComplete={onCommandComplete}
+            />
           ))}
         </tbody>
       </table>
