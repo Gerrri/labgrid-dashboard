@@ -29,7 +29,7 @@ class LabgridClient:
 
     def __init__(
         self,
-        url: str = "coordinator:20408",  # gRPC address (host:port, no protocol prefix)
+        url: str = "localhost:20408",  # gRPC address (host:port, no protocol prefix)
         realm: str = "realm1",  # Kept for compatibility, not used in gRPC
         timeout: int = 30,
     ):

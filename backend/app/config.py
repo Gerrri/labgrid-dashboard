@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     )
 
     # Labgrid Coordinator settings
-    coordinator_url: str = "ws://coordinator:20408/ws"
+    # Default uses localhost for non-Docker deployment
+    # Set COORDINATOR_URL env var for Docker (e.g., ws://coordinator:20408/ws)
+    coordinator_url: str = "ws://localhost:20408/ws"
     coordinator_realm: str = "realm1"
     coordinator_timeout: int = 30
 
