@@ -151,15 +151,26 @@ async def execute_command(
             detail=f"Command '{request.command_name}' not found in configuration",
         )
 
-    # Execute the command (mock for now - actual implementation would use SSH/serial)
+    # Execute the command via Labgrid Coordinator
     logger.info(f"Executing command '{command.name}' on target '{name}'")
 
-    # Mock command execution result
-    output = CommandOutput(
-        command=command.command,
-        output=f"[Mock] Executed '{command.command}' on {name}\nOutput would appear here.",
-        timestamp=datetime.utcnow(),
-        exit_code=0,
-    )
+    try:
+        # Execute command through the labgrid client
+        result_output, exit_code = await client.execute_command(name, command.command)
+
+        output = CommandOutput(
+            command=command.command,
+            output=result_output,
+            timestamp=datetime.utcnow(),
+            exit_code=exit_code,
+        )
+    except Exception as e:
+        logger.error(f"Command execution failed: {e}")
+        output = CommandOutput(
+            command=command.command,
+            output=f"Error executing command: {str(e)}",
+            timestamp=datetime.utcnow(),
+            exit_code=1,
+        )
 
     return output

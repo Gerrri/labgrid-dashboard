@@ -2,9 +2,10 @@
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 
-# WAMP client for Labgrid Coordinator communication
-autobahn>=23.6.2
-txaio>=23.1.1
+# gRPC client for Labgrid Coordinator communication (labgrid 24.0+)
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+labgrid>=24.0
 
 # Pydantic for data validation
 pydantic>=2.5.0

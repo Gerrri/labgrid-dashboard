@@ -1,9 +1,11 @@
 """
-WAMP client for Labgrid Coordinator communication.
+gRPC client for Labgrid Coordinator communication.
 
-This service handles the connection to the Labgrid Coordinator using the WAMP protocol
-via the autobahn library. It provides methods to query places/targets, subscribe
+This service handles the connection to the Labgrid Coordinator using gRPC protocol
+(labgrid 24.0+). It provides methods to query places/targets, subscribe
 to real-time updates, and execute commands on targets.
+
+Note: Labgrid switched from WAMP to gRPC in version 24.0.
 """
 
 import asyncio
@@ -23,28 +25,31 @@ COMMAND_DELAY = 0.1  # seconds to wait after sending command
 
 
 class LabgridClient:
-    """Async WAMP client for Labgrid Coordinator communication."""
+    """Async gRPC client for Labgrid Coordinator communication (labgrid 24.0+)."""
 
     def __init__(
         self,
-        url: str = "ws://coordinator:20408/ws",
-        realm: str = "realm1",
+        url: str = "coordinator:20408",  # gRPC address (host:port, no protocol prefix)
+        realm: str = "realm1",  # Kept for compatibility, not used in gRPC
         timeout: int = 30,
     ):
         """Initialize the Labgrid client.
 
         Args:
-            url: WebSocket URL of the Labgrid Coordinator.
-            realm: WAMP realm to join.
+            url: gRPC address of the Labgrid Coordinator (host:port format).
+            realm: Not used in gRPC mode, kept for API compatibility.
             timeout: Connection timeout in seconds.
         """
-        self._url = url
+        # Clean URL: remove ws:// prefix if present (migration from WAMP config)
+        self._url = url.replace("ws://", "").replace("/ws", "").rstrip("/")
         self._realm = realm
         self._timeout = timeout
         self._connected = False
-        self._session = None
+        self._session = None  # labgrid ClientSession
         self._subscriptions: List[Any] = []
         self._mock_mode = False
+        self._resources_cache: Dict[str, Dict[str, Any]] = {}
+        self._places_cache: Dict[str, Dict[str, Any]] = {}
 
         # Mock data for development/testing when coordinator is not available
         self._mock_places: Dict[str, Dict[str, Any]] = {
@@ -91,7 +96,7 @@ class LabgridClient:
         return self._mock_mode
 
     async def connect(self) -> bool:
-        """Connect to the Labgrid Coordinator.
+        """Connect to the Labgrid Coordinator using labgrid's ClientSession.
 
         Returns:
             True if connection was successful, False otherwise.
@@ -107,60 +112,53 @@ class LabgridClient:
         try:
             logger.info(f"Connecting to Labgrid Coordinator at {self._url}...")
 
-            # Try to establish WAMP connection
+            # Try to establish connection using labgrid's ClientSession
             try:
-                from autobahn.asyncio.wamp import ApplicationSession, ApplicationRunner
+                from labgrid.remote.client import ClientSession
+                logger.info("labgrid ClientSession imported successfully")
 
-                # Create a custom session class for our connection
-                connected_event = asyncio.Event()
-                session_holder: Dict[str, Any] = {"session": None}
+                # Get the current event loop
+                loop = asyncio.get_event_loop()
+                
+                # Create ClientSession with address and loop
+                self._session = ClientSession(self._url, loop)
+                
+                # Start the session (connects to coordinator)
+                await self._session.start()
+                logger.info("ClientSession started successfully")
+                
+                # Wait for initial sync with coordinator
+                await asyncio.sleep(1)
+                
+                # Refresh our cache from the session
+                await self._refresh_cache()
+                
+                self._connected = True
+                self._mock_mode = False
+                logger.info(f"Successfully connected to Labgrid Coordinator")
+                logger.info(f"Found {len(self._resources_cache)} resources, {len(self._places_cache)} places")
+                return True
 
-                class LabgridSession(ApplicationSession):
-                    async def onJoin(self, details):
-                        logger.info(f"Joined WAMP realm: {details.realm}")
-                        session_holder["session"] = self
-                        connected_event.set()
-
-                    def onDisconnect(self):
-                        logger.warning("Disconnected from WAMP router")
-                        connected_event.clear()
-
-                runner = ApplicationRunner(url=self._url, realm=self._realm)
-
-                # Start the runner in a background task
-                asyncio.create_task(runner.run(LabgridSession, start_loop=False))
-
-                # Wait for connection with timeout
-                try:
-                    await asyncio.wait_for(connected_event.wait(), timeout=self._timeout)
-                    self._session = session_holder["session"]
-                    self._connected = True
-                    self._mock_mode = False
-                    logger.info("Successfully connected to Labgrid Coordinator")
-                    return True
-                except asyncio.TimeoutError:
-                    # Check if auto-fallback to mock is allowed
-                    if settings.mock_mode.lower() == "auto":
-                        logger.warning(
-                            f"Connection timeout after {self._timeout}s, falling back to mock mode"
-                        )
-                        self._enable_mock_mode()
-                        return True
-                    else:
-                        logger.error(
-                            f"Connection timeout after {self._timeout}s, mock mode disabled"
-                        )
-                        return False
-
-            except ImportError:
+            except ImportError as e:
+                logger.error(f"Import error (labgrid not available): {e}")
                 if settings.mock_mode.lower() == "auto":
-                    logger.warning("autobahn not available, using mock mode")
+                    logger.warning("labgrid not available, using mock mode")
                     self._enable_mock_mode()
                     return True
                 else:
-                    logger.error("autobahn not available and mock mode disabled")
+                    logger.error("labgrid not available and mock mode disabled")
                     return False
+            except asyncio.TimeoutError:
+                logger.error(f"Connection timeout after {self._timeout}s")
+                if settings.mock_mode.lower() == "auto":
+                    logger.warning("Falling back to mock mode")
+                    self._enable_mock_mode()
+                    return True
+                return False
             except Exception as e:
+                logger.error(f"Exception during connection: {type(e).__name__}: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 if settings.mock_mode.lower() == "auto":
                     logger.warning(f"Failed to connect to coordinator: {e}, using mock mode")
                     self._enable_mock_mode()
@@ -171,10 +169,77 @@ class LabgridClient:
 
         except Exception as e:
             logger.error(f"Unexpected error during connection: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             if settings.mock_mode.lower() == "auto":
                 self._enable_mock_mode()
                 return True
             return False
+
+    async def _refresh_cache(self) -> None:
+        """Refresh the local cache of resources and places from the session."""
+        if not self._session:
+            return
+            
+        try:
+            # Get resources from session (exporter -> group -> resource_type -> ResourceEntry)
+            self._resources_cache = {}
+            for exporter_name, exporter_data in self._session.resources.items():
+                for group_name, group_resources in exporter_data.items():
+                    for res_type, res_entry in group_resources.items():
+                        # ResourceEntry has params as direct attribute
+                        params = {}
+                        if hasattr(res_entry, 'params'):
+                            params = dict(res_entry.params) if res_entry.params else {}
+                        elif hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
+                            params = res_entry.data.get('params', {})
+                        
+                        # Get cls attribute
+                        cls_name = res_type
+                        if hasattr(res_entry, 'cls'):
+                            cls_name = res_entry.cls
+                        elif hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
+                            cls_name = res_entry.data.get('cls', res_type)
+                        
+                        # Get acquired attribute
+                        acquired = None
+                        if hasattr(res_entry, 'acquired'):
+                            acquired = res_entry.acquired
+                        elif hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
+                            acquired = res_entry.data.get('acquired')
+                        
+                        # Get avail attribute
+                        avail = True
+                        if hasattr(res_entry, 'avail'):
+                            avail = res_entry.avail
+                        elif hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
+                            avail = res_entry.data.get('avail', True)
+                        
+                        self._resources_cache[exporter_name] = {
+                            res_type: {
+                                "cls": cls_name,
+                                "params": params,
+                                "acquired": acquired,
+                                "avail": avail,
+                            }
+                        }
+            
+            # Get places from session (place_name -> Place object)
+            self._places_cache = {}
+            for place_name, place_obj in self._session.places.items():
+                self._places_cache[place_name] = {
+                    "name": place_name,
+                    "acquired": getattr(place_obj, 'acquired', None),
+                    "comment": getattr(place_obj, 'comment', ''),
+                    "tags": dict(getattr(place_obj, 'tags', {})),
+                }
+                
+            logger.debug(f"Cache refreshed: {len(self._resources_cache)} resources, {len(self._places_cache)} places")
+            
+        except Exception as e:
+            logger.error(f"Failed to refresh cache: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
     def _enable_mock_mode(self) -> None:
         """Enable mock mode for development/testing."""
@@ -186,23 +251,32 @@ class LabgridClient:
         """Disconnect from the Labgrid Coordinator."""
         if self._session:
             try:
-                # Unsubscribe from all subscriptions
-                for sub in self._subscriptions:
-                    try:
-                        await sub.unsubscribe()
-                    except Exception as e:
-                        logger.warning(f"Error unsubscribing: {e}")
-                self._subscriptions.clear()
-
-                # Leave the session
-                await self._session.leave()
+                await self._session.close()
             except Exception as e:
                 logger.warning(f"Error during disconnect: {e}")
 
         self._session = None
         self._connected = False
         self._mock_mode = False
+        self._resources_cache = {}
+        self._places_cache = {}
         logger.info("Disconnected from Labgrid Coordinator")
+
+    def _resolve_hostname_to_ip(self, hostname: str) -> Optional[str]:
+        """Resolve a hostname to its IP address.
+        
+        Args:
+            hostname: The hostname to resolve.
+            
+        Returns:
+            The IP address as string, or None if resolution fails.
+        """
+        try:
+            ip = socket.gethostbyname(hostname)
+            return ip
+        except socket.gaierror as e:
+            logger.debug(f"Could not resolve hostname '{hostname}': {e}")
+            return None
 
     async def get_places(self) -> List[Target]:
         """Get all places/targets from the coordinator.
@@ -218,11 +292,67 @@ class LabgridClient:
             return []
 
         try:
-            # Call the coordinator's RPC to get places
-            places_data = await self._session.call("org.labgrid.coordinator.get_places")
-            return self._parse_places(places_data)
+            # Refresh cache and return parsed places
+            await self._refresh_cache()
+            
+            # Convert resources cache to targets
+            # In labgrid, resources are organized by exporter name
+            targets = []
+            for exporter_name, exporter_resources in self._resources_cache.items():
+                # Collect all resources for this exporter
+                resources_list = []
+                ip_address = None
+                acquired_by = None
+                is_available = True
+                
+                for res_type, res_data in exporter_resources.items():
+                    params = res_data.get("params", {})
+                    
+                    # Extract exporter hostname from params.extra.proxy
+                    # This is the hostname of the exporter machine
+                    extra = params.get("extra", {})
+                    exporter_hostname = extra.get("proxy") or exporter_name
+                    
+                    # Resolve exporter hostname to IP address
+                    if exporter_hostname and not ip_address:
+                        ip_address = self._resolve_hostname_to_ip(exporter_hostname)
+                    
+                    # Track acquired status
+                    if res_data.get("acquired"):
+                        acquired_by = res_data.get("acquired")
+                    
+                    # Track availability
+                    if not res_data.get("avail", True):
+                        is_available = False
+                    
+                    # Create Resource with correct field names (type and params)
+                    resources_list.append(Resource(
+                        type=res_data.get("cls", res_type),
+                        params=params,
+                    ))
+                
+                # Determine status based on availability and acquisition
+                if not is_available:
+                    status = "offline"
+                elif acquired_by:
+                    status = "acquired"
+                else:
+                    status = "available"
+                
+                target = Target(
+                    name=exporter_name,
+                    status=status,
+                    acquired_by=acquired_by,
+                    ip_address=ip_address,
+                    resources=resources_list,
+                )
+                targets.append(target)
+            
+            return targets
         except Exception as e:
             logger.error(f"Failed to get places: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
     async def get_place_info(self, name: str) -> Optional[Target]:
@@ -242,11 +372,30 @@ class LabgridClient:
             return None
 
         try:
-            place_data = await self._session.call(
-                "org.labgrid.coordinator.get_place", name
-            )
-            if place_data:
-                return self._parse_place(name, place_data)
+            # Refresh cache first
+            await self._refresh_cache()
+            
+            # Look for the exporter matching the name
+            if name in self._resources_cache:
+                exporter_resources = self._resources_cache[name]
+                resources = []
+                avail = True
+                for res_type, res_data in exporter_resources.items():
+                    resources.append(Resource(
+                        name=res_type,
+                        type=res_data.get("cls", res_type),
+                        info=res_data.get("params", {}),
+                    ))
+                    if not res_data.get("avail", False):
+                        avail = False
+                
+                return Target(
+                    name=name,
+                    status="available" if avail else "offline",
+                    acquired_by=None,
+                    resources=resources,
+                    tags={},
+                )
             return None
         except Exception as e:
             logger.error(f"Failed to get place info for {name}: {e}")
@@ -256,6 +405,8 @@ class LabgridClient:
         self, callback: Callable[[str, Dict[str, Any]], None]
     ) -> bool:
         """Subscribe to real-time place updates.
+
+        Note: gRPC streaming not yet implemented. Uses polling instead.
 
         Args:
             callback: Function to call when a place is updated.
@@ -272,25 +423,18 @@ class LabgridClient:
             logger.warning("Not connected to coordinator")
             return False
 
-        try:
-            # Subscribe to place change events
-            sub = await self._session.subscribe(
-                callback, "org.labgrid.coordinator.place_changed"
-            )
-            self._subscriptions.append(sub)
-            logger.info("Subscribed to place updates")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to subscribe to updates: {e}")
-            return False
+        # TODO: Implement gRPC streaming subscription
+        # For now, we use polling via _refresh_cache()
+        logger.info("Subscriptions use polling mode (gRPC streaming not yet implemented)")
+        return True
 
     async def execute_command(
         self, place_name: str, command: str
     ) -> Tuple[str, int]:
-        """Execute a command on a target via the Labgrid Coordinator.
+        """Execute a command on a target via direct serial connection.
 
-        This method acquires the place, executes the command via the serial
-        console, and releases the place.
+        This method finds the NetworkSerialPort resource for the target
+        and executes the command via the serial console.
 
         Args:
             place_name: The name of the place/target to execute on.
@@ -307,15 +451,11 @@ class LabgridClient:
             return ("Error: Not connected to coordinator", 1)
 
         try:
-            # Get place info to find the serial port resource
-            place_data = await self._session.call(
-                "org.labgrid.coordinator.get_place", place_name
-            )
-            if not place_data:
-                return (f"Error: Place '{place_name}' not found", 1)
-
+            # Refresh cache to get latest resources
+            await self._refresh_cache()
+            
             # Get resources for this place
-            resources = await self._get_place_resources(place_name)
+            resources = self._get_place_resources_from_cache(place_name)
             if not resources:
                 return (f"Error: No resources found for '{place_name}'", 1)
 
@@ -343,8 +483,8 @@ class LabgridClient:
             logger.error(f"Failed to execute command on {place_name}: {e}")
             return (f"Error: {str(e)}", 1)
 
-    async def _get_place_resources(self, place_name: str) -> List[Dict[str, Any]]:
-        """Get resources for a place from the coordinator.
+    def _get_place_resources_from_cache(self, place_name: str) -> List[Dict[str, Any]]:
+        """Get resources for a place from the local cache.
 
         Args:
             place_name: The place name.
@@ -352,20 +492,21 @@ class LabgridClient:
         Returns:
             List of resource dictionaries.
         """
-        try:
-            resources = await self._session.call(
-                "org.labgrid.coordinator.get_resources"
-            )
-            place_resources = []
-            for group_name, group_resources in resources.items():
-                for res_name, res_data in group_resources.items():
-                    # Check if this resource belongs to our place
-                    if place_name in res_name or group_name == place_name:
-                        place_resources.append(res_data)
+        place_resources = []
+        
+        # Look for exact match first
+        if place_name in self._resources_cache:
+            for res_name, res_data in self._resources_cache[place_name].items():
+                place_resources.append(res_data)
             return place_resources
-        except Exception as e:
-            logger.error(f"Failed to get resources: {e}")
-            return []
+        
+        # Search for partial matches
+        for group_name, group_resources in self._resources_cache.items():
+            if place_name in group_name:
+                for res_name, res_data in group_resources.items():
+                    place_resources.append(res_data)
+        
+        return place_resources
 
     async def _execute_via_serial(
         self, host: str, port: int, command: str

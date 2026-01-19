@@ -44,3 +44,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Debug files
+BUG.md
