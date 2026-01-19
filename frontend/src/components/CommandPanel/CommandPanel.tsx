@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Command, CommandOutput } from '../../types';
 import { api } from '../../services/api';
 import { CommandButton } from './CommandButton';
@@ -8,22 +8,33 @@ import './CommandPanel.css';
 interface CommandPanelProps {
   targetName: string;
   initialOutputs?: CommandOutput[];
+  persistedOutputs?: CommandOutput[];
   onCommandComplete?: (output: CommandOutput) => void;
+  onOutputsChange?: (outputs: CommandOutput[]) => void;
 }
 
 /**
  * Panel for executing commands and viewing output
+ * Uses persistedOutputs to preserve command outputs across refreshes
  */
 export function CommandPanel({
   targetName,
   initialOutputs = [],
+  persistedOutputs,
   onCommandComplete,
+  onOutputsChange,
 }: CommandPanelProps) {
   const [commands, setCommands] = useState<Command[]>([]);
-  const [outputs, setOutputs] = useState<CommandOutput[]>(initialOutputs);
+  // Use persisted outputs if available, otherwise fall back to initial outputs
+  const [outputs, setOutputs] = useState<CommandOutput[]>(
+    persistedOutputs ?? initialOutputs
+  );
   const [loadingCommands, setLoadingCommands] = useState(true);
   const [executingCommand, setExecutingCommand] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Track if this is the first mount to avoid overwriting persisted state
+  const isFirstMount = useRef(true);
 
   // Fetch available commands for the target
   useEffect(() => {
@@ -45,10 +56,26 @@ export function CommandPanel({
     fetchCommands();
   }, [targetName]);
 
-  // Update outputs when initialOutputs change (e.g., from WebSocket)
+  // Only update from initialOutputs on first mount and if no persisted outputs
   useEffect(() => {
-    setOutputs(initialOutputs);
-  }, [initialOutputs]);
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      // Only set from initialOutputs if we don't have persisted outputs
+      if (!persistedOutputs || persistedOutputs.length === 0) {
+        setOutputs(initialOutputs);
+        onOutputsChange?.(initialOutputs);
+      }
+    }
+    // Intentionally not including initialOutputs in deps to avoid overwrites
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync with persisted outputs when they change (e.g., from parent state)
+  useEffect(() => {
+    if (persistedOutputs !== undefined) {
+      setOutputs(persistedOutputs);
+    }
+  }, [persistedOutputs]);
 
   const handleExecuteCommand = useCallback(
     async (commandName: string) => {
@@ -58,7 +85,9 @@ export function CommandPanel({
         const response = await api.executeCommand(targetName, commandName);
         const newOutput = response.data;
 
-        setOutputs((prev) => [newOutput, ...prev]);
+        const newOutputs = [newOutput, ...outputs];
+        setOutputs(newOutputs);
+        onOutputsChange?.(newOutputs);
         onCommandComplete?.(newOutput);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Command execution failed';
@@ -68,11 +97,12 @@ export function CommandPanel({
         setExecutingCommand(null);
       }
     },
-    [targetName, onCommandComplete]
+    [targetName, outputs, onCommandComplete, onOutputsChange]
   );
 
   const handleClearOutput = () => {
     setOutputs([]);
+    onOutputsChange?.([]);
   };
 
   if (loadingCommands) {

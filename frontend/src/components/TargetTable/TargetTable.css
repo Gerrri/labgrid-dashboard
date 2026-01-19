@@ -276,6 +276,34 @@
   border-radius: 8px;
 }
 
+/* Refreshing Indicator */
+.target-table-refreshing {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.25rem 0.75rem;
+  background-color: var(--color-primary);
+  color: white;
+  font-size: 0.75rem;
+  text-align: center;
+  z-index: 10;
+  animation: slideDown 0.2s ease;
+}
+
+.target-table-container {
+  position: relative;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .target-table th,
