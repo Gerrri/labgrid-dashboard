@@ -7,10 +7,8 @@ import type {
   HealthResponse,
   ScheduledCommandsResponse,
 } from '../types';
-import { mockApi } from './mockApi';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 /**
  * Axios instance with base configuration
@@ -24,9 +22,9 @@ const axiosInstance = axios.create({
 });
 
 /**
- * Real API service for interacting with the Labgrid Dashboard backend
+ * API service for interacting with the Labgrid Dashboard backend
  */
-const realApi = {
+export const api = {
   /**
    * Get all targets with their current status
    */
@@ -66,10 +64,5 @@ const realApi = {
   getScheduledCommands: () =>
     axiosInstance.get<ScheduledCommandsResponse>('/api/targets/scheduled-commands'),
 };
-
-/**
- * Export the appropriate API based on environment
- */
-export const api = USE_MOCK ? mockApi : realApi;
 
 export default api;

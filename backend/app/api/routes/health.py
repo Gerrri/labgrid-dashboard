@@ -15,7 +15,6 @@ class HealthResponse(BaseModel):
 
     status: str
     coordinator_connected: bool
-    mock_mode: bool = False
     service: str = "labgrid-dashboard-backend"
 
 
@@ -58,11 +57,9 @@ async def health_check() -> HealthResponse:
         return HealthResponse(
             status="degraded",
             coordinator_connected=False,
-            mock_mode=False,
         )
 
     return HealthResponse(
         status="healthy" if client.connected else "degraded",
         coordinator_connected=client.connected,
-        mock_mode=client.mock_mode,
     )

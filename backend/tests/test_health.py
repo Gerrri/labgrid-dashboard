@@ -19,18 +19,6 @@ async def test_health_check_returns_healthy(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_health_check_includes_mock_mode(client: AsyncClient):
-    """Test that health check indicates mock mode when enabled."""
-    response = await client.get("/api/health")
-
-    assert response.status_code == 200
-    data = response.json()
-    assert "mock_mode" in data
-    # Mock mode should be True since we're using a mocked client
-    assert data["mock_mode"] is True
-
-
-@pytest.mark.asyncio
 async def test_root_endpoint(client: AsyncClient):
     """Test that root endpoint returns API information."""
     response = await client.get("/")
