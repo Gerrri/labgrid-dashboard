@@ -186,6 +186,43 @@ services:
       - labgrid-network
     restart: unless-stopped
 
+  # =============================================================================
+  # Staging Profile: Init Container for Auto-Acquire
+  # =============================================================================
+
+  # Init-Acquire - Automatically acquires exporter-1 for demonstration
+  # This runs once at startup to show "acquired" status in the dashboard
+  init-acquire:
+    build:
+      context: ./docker/init-acquire
+      dockerfile: Dockerfile
+    container_name: labgrid-init-acquire
+    profiles: ["staging"]
+    environment:
+      # Coordinator connection (host:port format for labgrid-client)
+      - COORDINATOR_HOST=coordinator:20408
+      # Place name to create and acquire
+      - PLACE_NAME=exporter-1
+      # Exporter to match resources from
+      - EXPORTER_NAME=exporter-1
+      # Username shown in dashboard as "acquired_by"
+      - USER_NAME=staging-user
+      # Wait time for services to initialize
+      - WAIT_TIME=15
+    depends_on:
+      coordinator:
+        condition: service_healthy
+      exporter-1:
+        condition: service_started
+      exporter-2:
+        condition: service_started
+      exporter-3:
+        condition: service_started
+    networks:
+      - labgrid-network
+    # Restart policy: no (runs once then exits)
+    restart: "no"
+
 networks:
   labgrid-network:
     driver: bridge
