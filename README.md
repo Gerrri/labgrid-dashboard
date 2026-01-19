@@ -57,6 +57,16 @@ docker compose --env-file .env.staging --profile staging up -d
 MOCK_MODE=false docker compose --profile staging up -d
 ```
 
+**Auto-Acquire Feature:**
+When starting in staging mode, an init-container automatically:
+1. Creates a place named `exporter-1`
+2. Matches it with the exporter-1 resources
+3. Acquires the place as `staging-user`
+
+This demonstrates the "acquired" status in the dashboard with:
+- `exporter-1`: Status "acquired", acquired_by: "staging-user"
+- `exporter-2`, `exporter-3`: Status "available"
+
 **Staging Architecture:**
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -163,6 +173,13 @@ See `.env.example` and `.env.staging` for available configuration options.
 | `COORDINATOR_REALM` | WAMP realm | `realm1` |
 | `COORDINATOR_TIMEOUT` | Connection timeout in seconds | `30` |
 | `MOCK_MODE` | `auto`, `true`, or `false` - controls command execution mode | `auto` |
+
+**Labgrid CLI Variables (used by init-acquire container):**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LG_COORDINATOR` | Labgrid Coordinator address (host:port) | `coordinator:20408` |
+| `LG_USERNAME` | Username shown as "acquired_by" | `staging-user` |
 | `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:3000` |
 
 **MOCK_MODE values:**
