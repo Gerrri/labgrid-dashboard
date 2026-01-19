@@ -41,3 +41,21 @@ auto_refresh_commands:
   - "Linux Version"
   - "System Time"
   - "Uptime"
+
+# Scheduled commands that run periodically on all targets
+# The output is displayed as a column in the target table
+scheduled_commands:
+  - name: "Uptime"
+    command: "uptime -p"
+    interval_seconds: 60
+    description: "System uptime (updates every minute)"
+
+  - name: "Load"
+    command: "cat /proc/loadavg | cut -d' ' -f1-3"
+    interval_seconds: 30
+    description: "System load average (updates every 30s)"
+
+  - name: "Memory"
+    command: "free -h | grep Mem | awk '{print $3\"/\"$2}'"
+    interval_seconds: 60
+    description: "Memory usage (updates every minute)"
