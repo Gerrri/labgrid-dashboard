@@ -5,6 +5,7 @@ import type {
   Command,
   CommandOutput,
   HealthResponse,
+  ScheduledCommandsResponse,
 } from '../types';
 import { mockApi } from './mockApi';
 
@@ -58,6 +59,12 @@ const realApi = {
    */
   getHealth: () =>
     axiosInstance.get<HealthResponse>('/api/health'),
+
+  /**
+   * Get scheduled commands configuration
+   */
+  getScheduledCommands: () =>
+    axiosInstance.get<ScheduledCommandsResponse>('/api/targets/scheduled-commands'),
 };
 
 /**

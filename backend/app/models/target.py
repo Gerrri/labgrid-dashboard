@@ -3,7 +3,7 @@ Pydantic models for Labgrid targets, resources, and command outputs.
 """
 
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,24 @@ class CommandOutput(BaseModel):
     exit_code: int = Field(..., description="Command exit code (0 = success)")
 
 
+class ScheduledCommandOutput(BaseModel):
+    """Represents the latest output of a scheduled command for a specific target."""
+
+    command_name: str = Field(..., description="Display name of the command (used as column header)")
+    output: str = Field(..., description="The command output (stdout/stderr)")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="When the command was last executed")
+    exit_code: int = Field(default=0, description="Command exit code (0 = success)")
+
+
+class ScheduledCommand(BaseModel):
+    """Represents a command that runs periodically on all targets (from config)."""
+
+    name: str = Field(..., description="Display name for the command (shown as column header)")
+    command: str = Field(..., description="The shell command to execute")
+    interval_seconds: int = Field(..., ge=5, description="Execution interval in seconds (min 5)")
+    description: str = Field(default="", description="Optional description of what this command does")
+
+
 class Target(BaseModel):
     """Represents a Labgrid target/place with its current state."""
 
@@ -37,6 +55,9 @@ class Target(BaseModel):
     resources: List[Resource] = Field(default_factory=list, description="Attached resources")
     last_command_outputs: List[CommandOutput] = Field(
         default_factory=list, description="Recent command outputs"
+    )
+    scheduled_outputs: Dict[str, ScheduledCommandOutput] = Field(
+        default_factory=dict, description="Latest outputs from scheduled commands (keyed by command name)"
     )
 
 
@@ -54,4 +75,7 @@ class CommandsConfig(BaseModel):
     commands: List[Command] = Field(default_factory=list, description="List of available commands")
     auto_refresh_commands: List[str] = Field(
         default_factory=list, description="Command names to auto-refresh"
+    )
+    scheduled_commands: List[ScheduledCommand] = Field(
+        default_factory=list, description="Commands that run periodically on all targets"
     )

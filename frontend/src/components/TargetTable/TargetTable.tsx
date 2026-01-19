@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import type { Target, CommandOutput } from '../../types';
+import type { Target, CommandOutput, ScheduledCommand } from '../../types';
 import { TargetRow } from './TargetRow';
 import './TargetTable.css';
 
@@ -9,6 +9,7 @@ interface TargetTableProps {
   onCommandComplete?: (targetName: string, output: CommandOutput) => void;
   commandOutputs?: Map<string, CommandOutput[]>;
   onCommandOutputsChange?: (targetName: string, outputs: CommandOutput[]) => void;
+  scheduledCommands?: ScheduledCommand[];
 }
 
 /**
@@ -21,6 +22,7 @@ export function TargetTable({
   onCommandComplete,
   commandOutputs,
   onCommandOutputsChange,
+  scheduledCommands = [],
 }: TargetTableProps) {
   // Manage expanded state at table level to preserve across refreshes
   const [expandedTargets, setExpandedTargets] = useState<Set<string>>(new Set());
@@ -41,6 +43,9 @@ export function TargetTable({
       return newSet;
     });
   }, []);
+
+  // Calculate total columns for expanded row colspan
+  const totalColumns = 5 + scheduledCommands.length;
 
   // Show empty state only when not loading and no targets
   if (!loading && sortedTargets.length === 0) {
@@ -74,6 +79,11 @@ export function TargetTable({
                 <th>Status</th>
                 <th>Acquired By</th>
                 <th>IP Address</th>
+                {scheduledCommands.map((cmd) => (
+                  <th key={cmd.name} className="scheduled-column" title={cmd.description}>
+                    {cmd.name}
+                  </th>
+                ))}
                 <th>Actions</th>
               </tr>
             </thead>
@@ -87,6 +97,8 @@ export function TargetTable({
                   onCommandComplete={onCommandComplete}
                   commandOutputs={commandOutputs?.get(target.name)}
                   onCommandOutputsChange={onCommandOutputsChange}
+                  scheduledCommands={scheduledCommands}
+                  totalColumns={totalColumns}
                 />
               ))}
             </tbody>

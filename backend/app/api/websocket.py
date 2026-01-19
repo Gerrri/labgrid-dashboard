@@ -10,9 +10,10 @@ from typing import Any, Dict
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.api.connection_manager import manager
-from app.models.target import CommandOutput
+from app.models.target import CommandOutput, ScheduledCommandOutput
 from app.services.command_service import CommandService
 from app.services.labgrid_client import LabgridClient
+from app.services.scheduler_service import SchedulerService
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ router = APIRouter()
 # Global instances - will be set by main app
 _labgrid_client: LabgridClient | None = None
 _command_service: CommandService | None = None
+_scheduler_service: SchedulerService | None = None
 
 
 def set_labgrid_client(client: LabgridClient) -> None:
@@ -33,6 +35,14 @@ def set_command_service(service: CommandService) -> None:
     """Set the global command service instance."""
     global _command_service
     _command_service = service
+
+
+def set_scheduler_service(service: SchedulerService) -> None:
+    """Set the global scheduler service instance."""
+    global _scheduler_service
+    _scheduler_service = service
+    # Set the notify callback to broadcast updates via WebSocket
+    service.set_notify_callback(broadcast_scheduled_output)
 
 
 async def handle_subscribe(websocket: WebSocket, data: Dict[str, Any]) -> None:
@@ -248,9 +258,38 @@ async def broadcast_targets_list() -> None:
     """Broadcast current targets list to all connected clients."""
     if _labgrid_client:
         targets_list = await _labgrid_client.get_places()
+        # Enrich with scheduled outputs
+        if _scheduler_service:
+            for target in targets_list:
+                target.scheduled_outputs = _scheduler_service.get_outputs_for_target(target.name)
         await manager.broadcast(
             {
                 "type": "targets_list",
                 "data": [t.model_dump() for t in targets_list],
             },
         )
+
+
+async def broadcast_scheduled_output(
+    command_name: str, target_name: str, output: ScheduledCommandOutput
+) -> None:
+    """Broadcast a scheduled command output to all connected clients.
+
+    This function is called by the SchedulerService when a command completes.
+
+    Args:
+        command_name: The name of the scheduled command.
+        target_name: The target the command was executed on.
+        output: The command output.
+    """
+    await manager.broadcast_to_subscribed(
+        {
+            "type": "scheduled_output",
+            "data": {
+                "command_name": command_name,
+                "target": target_name,
+                "output": output.model_dump(),
+            },
+        },
+        target_name,
+    )
