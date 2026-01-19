@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { Target, CommandOutput } from '../../types';
 import { TargetRow } from './TargetRow';
 import './TargetTable.css';
@@ -25,6 +25,11 @@ export function TargetTable({
   // Manage expanded state at table level to preserve across refreshes
   const [expandedTargets, setExpandedTargets] = useState<Set<string>>(new Set());
 
+  // Sort targets alphabetically by name for consistent display
+  const sortedTargets = useMemo(() => {
+    return [...targets].sort((a, b) => a.name.localeCompare(b.name));
+  }, [targets]);
+
   const handleToggleExpand = useCallback((targetName: string) => {
     setExpandedTargets((prev) => {
       const newSet = new Set(prev);
@@ -38,7 +43,7 @@ export function TargetTable({
   }, []);
 
   // Show empty state only when not loading and no targets
-  if (!loading && targets.length === 0) {
+  if (!loading && sortedTargets.length === 0) {
     return (
       <div className="target-table-empty">
         <p>No targets found</p>
@@ -49,13 +54,13 @@ export function TargetTable({
   return (
     <div className="target-table-container">
       {/* Show loading overlay instead of replacing the entire table */}
-      {loading && targets.length === 0 && (
+      {loading && sortedTargets.length === 0 && (
         <div className="target-table-loading">
           <div className="spinner" />
           <p>Loading targets...</p>
         </div>
       )}
-      {targets.length > 0 && (
+      {sortedTargets.length > 0 && (
         <>
           {loading && (
             <div className="target-table-refreshing">
@@ -73,7 +78,7 @@ export function TargetTable({
               </tr>
             </thead>
             <tbody>
-              {targets.map((target) => (
+              {sortedTargets.map((target) => (
                 <TargetRow
                   key={target.name}
                   target={target}
