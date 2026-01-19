@@ -64,7 +64,6 @@ def mock_labgrid_client(mock_targets: list[Target]) -> MagicMock:
     """Fixture providing a mocked LabgridClient."""
     client = MagicMock(spec=LabgridClient)
     client.connected = True
-    client.mock_mode = True
     client.get_places = AsyncMock(return_value=mock_targets)
     client.get_place_info = AsyncMock(
         side_effect=lambda name: next(

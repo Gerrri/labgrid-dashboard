@@ -85,7 +85,6 @@ export interface ScheduledCommandsResponse {
 export interface HealthResponse {
   status: string;
   coordinator_connected: boolean;
-  mock_mode: boolean;
 }
 
 /**

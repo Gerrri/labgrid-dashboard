@@ -141,15 +141,11 @@ function App() {
       <header className="app-header">
         <div className="header-title">
           <h1>Labgrid Dashboard</h1>
-          {healthInfo?.mock_mode && (
-            <span className="mode-badge mock">Mock Mode</span>
-          )}
         </div>
         <div className="header-status">
           <ConnectionStatus
             isConnected={connected}
             isReconnecting={isReconnecting}
-            mockMode={healthInfo?.mock_mode}
           />
           <RefreshControl
             onRefresh={handleRefresh}

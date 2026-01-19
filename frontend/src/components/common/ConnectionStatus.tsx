@@ -1,7 +1,6 @@
 interface ConnectionStatusProps {
   isConnected: boolean;
   isReconnecting?: boolean;
-  mockMode?: boolean;
 }
 
 /**
@@ -10,7 +9,6 @@ interface ConnectionStatusProps {
 export function ConnectionStatus({
   isConnected,
   isReconnecting = false,
-  mockMode = false,
 }: ConnectionStatusProps) {
   const getStatusClass = () => {
     if (isReconnecting) return 'reconnecting';
@@ -37,11 +35,6 @@ export function ConnectionStatus({
         {getStatusIcon()}
       </span>
       <span className="status-text">{getStatusText()}</span>
-      {mockMode && (
-        <span className="mock-badge" title="Using mock data">
-          Mock
-        </span>
-      )}
     </div>
   );
 }
