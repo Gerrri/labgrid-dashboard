@@ -6,7 +6,7 @@ from typing import List
 
 from pydantic import BaseModel, Field
 
-from app.models.target import Target
+from app.models.target import ScheduledCommand, Target
 
 
 class TargetListResponse(BaseModel):
@@ -14,6 +14,12 @@ class TargetListResponse(BaseModel):
 
     targets: List[Target] = Field(..., description="List of targets")
     total: int = Field(..., description="Total number of targets")
+
+
+class ScheduledCommandsResponse(BaseModel):
+    """Response model for list of scheduled commands."""
+
+    commands: List[ScheduledCommand] = Field(..., description="List of scheduled commands")
 
 
 class CommandExecutionRequest(BaseModel):

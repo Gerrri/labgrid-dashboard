@@ -8,7 +8,7 @@ from typing import List, Optional
 
 import yaml
 
-from app.models.target import Command, CommandsConfig
+from app.models.target import Command, CommandsConfig, ScheduledCommand
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +54,23 @@ class CommandService:
 
             auto_refresh = data.get("auto_refresh_commands", [])
 
+            scheduled_commands = [
+                ScheduledCommand(
+                    name=cmd.get("name", ""),
+                    command=cmd.get("command", ""),
+                    interval_seconds=cmd.get("interval_seconds", 60),
+                    description=cmd.get("description", ""),
+                )
+                for cmd in data.get("scheduled_commands", [])
+            ]
+
             self._config = CommandsConfig(
                 commands=commands,
                 auto_refresh_commands=auto_refresh,
+                scheduled_commands=scheduled_commands,
             )
 
-            logger.info(f"Loaded {len(commands)} commands from {config_path}")
+            logger.info(f"Loaded {len(commands)} commands, {len(scheduled_commands)} scheduled commands from {config_path}")
 
         except yaml.YAMLError as e:
             logger.error(f"Failed to parse commands file: {e}")
@@ -87,6 +98,16 @@ class CommandService:
         if self._config is None:
             self.load()
         return self._config.auto_refresh_commands if self._config else []
+
+    def get_scheduled_commands(self) -> List[ScheduledCommand]:
+        """Get all scheduled commands.
+
+        Returns:
+            List of scheduled commands.
+        """
+        if self._config is None:
+            self.load()
+        return self._config.scheduled_commands if self._config else []
 
     def get_command_by_name(self, name: str) -> Optional[Command]:
         """Get a specific command by name.
