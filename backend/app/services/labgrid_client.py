@@ -555,6 +555,68 @@ class LabgridClient:
         
         return place_resources
 
+    def _parse_serial_output(self, raw_output: str, command: str) -> str:
+        """Parse serial output to extract only the command result.
+        
+        Serial output typically contains:
+        1. Echo of the command we sent
+        2. The actual output
+        3. Shell prompt(s)
+        
+        Example raw: "uptime -p\r\ndut-1:/# uptime -p\r\nup 1 hour, 45 minutes\r\ndut-1:/# "
+        Desired: "up 1 hour, 45 minutes"
+        
+        Args:
+            raw_output: Raw output from serial connection.
+            command: The command that was executed.
+            
+        Returns:
+            Cleaned output containing only the command result.
+        """
+        import re
+        
+        if not raw_output:
+            return ""
+        
+        # Normalize line endings
+        output = raw_output.replace('\r\n', '\n').replace('\r', '\n')
+        
+        # Split into lines
+        lines = output.split('\n')
+        
+        # Filter out:
+        # 1. Lines that are just the command (echo)
+        # 2. Lines that look like shell prompts (ending with # or $ or >)
+        # 3. Empty lines at start/end
+        
+        # Common prompt patterns: "user@host:path# ", "root@dut:/# ", "dut-1:/# ", "$ ", "# "
+        prompt_pattern = re.compile(r'^.*[@:].*[#$>]\s*$|^[#$>]\s*$')
+        
+        filtered_lines = []
+        for line in lines:
+            line_stripped = line.strip()
+            
+            # Skip empty lines
+            if not line_stripped:
+                continue
+            
+            # Skip if line is just the command we sent
+            if line_stripped == command or line_stripped == command.strip():
+                continue
+            
+            # Skip if line looks like a prompt
+            if prompt_pattern.match(line_stripped):
+                continue
+            
+            # Skip if line contains the command followed by prompt-like characters
+            # e.g., "uptime -p dut-1:/# uptime -p" should be filtered
+            if command in line_stripped and ('#' in line_stripped or '$' in line_stripped):
+                continue
+            
+            filtered_lines.append(line_stripped)
+        
+        return '\n'.join(filtered_lines).strip()
+
     async def _execute_via_serial(
         self, host: str, port: int, command: str
     ) -> str:
@@ -566,7 +628,7 @@ class LabgridClient:
             command: Command to execute.
 
         Returns:
-            Command output as string.
+            Command output as string (cleaned, without prompts/echo).
         """
         loop = asyncio.get_event_loop()
 
@@ -612,8 +674,10 @@ class LabgridClient:
                 return f"Error: {str(e)}"
 
         # Execute in thread pool to avoid blocking
-        output = await loop.run_in_executor(None, _sync_execute)
-        return output
+        raw_output = await loop.run_in_executor(None, _sync_execute)
+        
+        # Parse the output to extract only the command result
+        return self._parse_serial_output(raw_output, command)
 
     def _mock_execute_command(self, place_name: str, command: str) -> Tuple[str, int]:
         """Execute a mock command for development/testing.
@@ -625,17 +689,35 @@ class LabgridClient:
         Returns:
             Tuple of (mock_output, exit_code).
         """
+        import random
+        
         # Simulate some realistic outputs for common commands
         mock_outputs = {
             "date": "Mon Jan 19 08:30:00 UTC 2026",
             "hostname": place_name,
             "uptime": " 08:30:00 up 1 day,  2:15,  1 user,  load average: 0.15, 0.10, 0.05",
+            "uptime -p": f"up {random.randint(1, 30)} days, {random.randint(1, 23)} hours",
             "uname -a": f"Linux {place_name} 5.15.0-generic #1 SMP PREEMPT x86_64 GNU/Linux",
             "whoami": "root",
             "pwd": "/root",
             "id": "uid=0(root) gid=0(root) groups=0(root)",
             "cat /etc/os-release": 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nNAME="Debian GNU/Linux"\nVERSION_ID="12"',
         }
+        
+        # Scheduled command patterns
+        if "loadavg" in command:
+            load1 = round(random.uniform(0.01, 2.0), 2)
+            load5 = round(random.uniform(0.01, 1.5), 2)
+            load15 = round(random.uniform(0.01, 1.0), 2)
+            return (f"{load1} {load5} {load15}", 0)
+        
+        if "free" in command and "awk" in command:
+            used = random.randint(100, 3000)
+            total = random.randint(used + 500, 8000)
+            return (f"{used}Mi/{total}Mi", 0)
+        
+        if "df" in command:
+            return ("Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        50G   12G   35G  26% /", 0)
 
         if command in mock_outputs:
             return (mock_outputs[command], 0)
