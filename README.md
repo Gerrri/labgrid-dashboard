@@ -19,15 +19,18 @@ Labgrid Dashboard provides a real-time web interface to:
 - **Execute commands** - Run predefined commands on DUTs and view their outputs
 - **Real-time updates** - WebSocket-based live status updates without manual refresh
 
+> 📖 For a quick introduction, see the [Quick Start Guide](quick-start.md).
+
 ## Technology Stack
 
 | Component | Technology |
 |-----------|------------|
-| Frontend | React + TypeScript |
-| Backend | Python + FastAPI |
+| Frontend | React 19 + TypeScript + Vite |
+| Backend | Python 3.11+ + FastAPI |
 | Real-time | WebSockets |
 | Labgrid Communication | WAMP Protocol (via autobahn) |
 | Development | Docker Compose |
+| Testing | Vitest (Frontend), pytest (Backend) |
 
 ## Quick Start
 
@@ -128,6 +131,8 @@ npm run dev        # With backend
 npm run dev:mock   # Without backend (mock data)
 ```
 
+> 📖 See [frontend/README.md](frontend/README.md) for more frontend-specific details.
+
 ### Running Tests
 
 **Backend:**
@@ -143,12 +148,14 @@ pytest
 ```bash
 cd frontend
 npm install
-npm test
+npm test              # Run tests once
+npm run test:ui       # Run with Vitest UI
+npm run test:coverage # Run with coverage report
 ```
 
 ## Configuration
 
-### Backend (`backend/commands.yaml`)
+### Backend Commands (`backend/commands.yaml`)
 
 Define custom commands that can be executed on targets:
 
@@ -161,31 +168,59 @@ commands:
   - name: "System Time"
     command: "date"
     description: "Current system time"
+
+  - name: "Kernel Version"
+    command: "uname -a"
+    description: "Kernel and system info"
+
+  # ... more commands
+
+# Commands that auto-refresh when a target is viewed
+auto_refresh_commands:
+  - "Linux Version"
+  - "System Time"
+  - "Uptime"
 ```
 
 ### Environment Variables
 
-See `.env.example` and `.env.staging` for available configuration options.
+See `.env.example` for the full list of available configuration options.
+
+#### Backend Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `COORDINATOR_URL` | Labgrid Coordinator WebSocket URL | `ws://coordinator:20408/ws` |
+| `COORDINATOR_URL` | Labgrid Coordinator WebSocket URL | `ws://coordinator:20408` |
 | `COORDINATOR_REALM` | WAMP realm | `realm1` |
 | `COORDINATOR_TIMEOUT` | Connection timeout in seconds | `30` |
 | `MOCK_MODE` | `auto`, `true`, or `false` - controls command execution mode | `auto` |
-
-**Labgrid CLI Variables (used by init-acquire container):**
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LG_COORDINATOR` | Labgrid Coordinator address (host:port) | `coordinator:20408` |
-| `LG_USERNAME` | Username shown as "acquired_by" | `staging-user` |
-| `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:3000` |
+| `COMMANDS_FILE` | Path to commands configuration file | `commands.yaml` |
+| `DEBUG` | Enable debug mode | `false` |
+| `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:3000,http://localhost:5173` |
 
 **MOCK_MODE values:**
 - `auto` (default): Falls back to mock mode if coordinator connection fails
 - `true`: Always use mock mode (for development)
 - `false`: Force real command execution (fails if coordinator unavailable)
+
+#### Frontend Configuration
+
+See `frontend/.env.example` for frontend-specific variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VITE_API_URL` | Backend API URL | `http://localhost:8000` |
+| `VITE_WS_URL` | Backend WebSocket URL | `ws://localhost:8000/api/ws` |
+| `VITE_USE_MOCK` | Use mock data instead of backend | `false` |
+
+#### Labgrid CLI Variables (used by init-acquire container)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `COORDINATOR_HOST` | Labgrid Coordinator address (host:port) | `coordinator:20408` |
+| `USER_NAME` | Username shown as "acquired_by" | `staging-user` |
+| `PLACE_NAME` | Place name to create and acquire | `exporter-1` |
+| `EXPORTER_NAME` | Exporter to match resources from | `exporter-1` |
 
 ## API Documentation
 
@@ -216,6 +251,7 @@ labgrid-dashboard/
 ├── backend/                 # FastAPI backend
 │   ├── app/
 │   │   ├── api/            # API routes and WebSocket handlers
+│   │   │   └── routes/     # Route definitions (health, targets)
 │   │   ├── models/         # Pydantic models
 │   │   └── services/       # Business logic (Labgrid client, commands)
 │   ├── tests/              # Backend tests
@@ -223,14 +259,26 @@ labgrid-dashboard/
 ├── frontend/               # React frontend
 │   ├── src/
 │   │   ├── components/     # React components
+│   │   │   ├── CommandPanel/   # Command execution UI
+│   │   │   ├── TargetTable/    # Target list display
+│   │   │   └── common/         # Shared components
 │   │   ├── hooks/          # Custom React hooks
 │   │   ├── services/       # API client
 │   │   ├── types/          # TypeScript types
 │   │   └── __tests__/      # Frontend tests
+│   ├── .env.example        # Frontend environment template
 │   └── vitest.config.ts    # Test configuration
 ├── docker/                 # Docker configurations
-│   └── coordinator/        # Labgrid Coordinator for development
-└── docker-compose.yml      # Development environment
+│   ├── coordinator/        # Labgrid Coordinator (Crossbar.io)
+│   ├── dut/                # Simulated DUT containers (Alpine Linux)
+│   ├── exporter/           # Labgrid Exporter configuration
+│   └── init-acquire/       # Auto-acquire initialization script
+├── agent-rules/            # AI agent coding rules
+├── plans/                  # Architecture documentation
+├── .env.example            # Environment variables template
+├── .env.staging            # Staging environment overrides
+├── docker-compose.yml      # Development environment
+└── quick-start.md          # Quick start guide
 ```
 
 ## Troubleshooting
@@ -263,6 +311,8 @@ docker compose --profile staging logs dut-1
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
+
+Please review the [AGENTS.md](AGENTS.md) and [agent-rules/](agent-rules/) for coding guidelines when contributing.
 
 ## License
 
