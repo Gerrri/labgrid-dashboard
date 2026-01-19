@@ -37,18 +37,61 @@ Labgrid Dashboard provides a real-time web interface to:
 - Node.js 20+ (for local development)
 - Python 3.11+ (for local development)
 
-### Running with Docker
+## Deployment Modes
+
+### Development Mode (Default)
+Uses mock data without real Labgrid infrastructure. Ideal for frontend development and testing.
 
 ```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
+docker compose up -d
 ```
+
+### Staging Mode
+Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands are executed on actual containers via Serial-over-TCP.
+
+```bash
+docker compose --profile staging up -d
+```
+
+**Staging Architecture:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Staging Environment                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────┐   ┌─────────┐   ┌─────────┐                   │
+│  │  DUT-1  │   │  DUT-2  │   │  DUT-3  │  (Alpine Linux)   │
+│  │ :5000   │   │ :5000   │   │ :5000   │                   │
+│  └────┬────┘   └────┬────┘   └────┬────┘                   │
+│       │ Serial-TCP  │ Serial-TCP  │                        │
+│  ┌────▼────┐   ┌────▼────┐   ┌────▼────┐                   │
+│  │Exporter1│   │Exporter2│   │Exporter3│  (labgrid)        │
+│  └────┬────┘   └────┬────┘   └────┬────┘                   │
+│       └──────────┬──┴──────────────┘ WAMP                  │
+│            ┌─────▼─────┐                                    │
+│            │Coordinator│  (Crossbar.io)                    │
+│            └─────┬─────┘                                    │
+│                  │ WAMP                                     │
+│            ┌─────▼─────┐                                    │
+│            │  Backend  │  (FastAPI)                         │
+│            └─────┬─────┘                                    │
+│                  │ HTTP/WS                                  │
+│            ┌─────▼─────┐                                    │
+│            │ Frontend  │  (React)                           │
+│            └───────────┘                                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Docker Commands
+
+| Command | Description |
+|---------|-------------|
+| `docker compose up -d` | Start in development mode (mock data) |
+| `docker compose --profile staging up -d` | Start in staging mode (real DUTs) |
+| `docker compose --profile staging down` | Stop all services |
+| `docker compose --profile staging ps` | Show service status |
+| `docker compose --profile staging logs -f` | Follow all logs |
+| `docker compose --profile staging logs exporter-1` | View specific exporter logs |
 
 ### Local Development
 
@@ -161,6 +204,33 @@ labgrid-dashboard/
 │   └── coordinator/        # Labgrid Coordinator for development
 └── docker-compose.yml      # Development environment
 ```
+
+## Troubleshooting
+
+### Staging Mode Issues
+
+**Exporters not connecting:**
+```bash
+# Check exporter logs
+docker compose --profile staging logs exporter-1
+
+# Verify coordinator is healthy
+docker compose --profile staging exec coordinator crossbar status
+```
+
+**DUT containers not responding:**
+```bash
+# Test Serial-over-TCP connection manually
+docker compose --profile staging exec backend nc dut-1 5000
+
+# Check DUT container logs
+docker compose --profile staging logs dut-1
+```
+
+**Commands not executing:**
+- Ensure MOCK_MODE is not set to "true" in backend environment
+- Verify exporter is registered with coordinator
+- Check that DUT container is running: `docker compose --profile staging ps dut-1`
 
 ## Contributing
 
