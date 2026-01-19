@@ -50,7 +50,11 @@ docker compose up -d
 Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands are executed on actual containers via Serial-over-TCP.
 
 ```bash
-docker compose --profile staging up -d
+# Start with real command execution (MOCK_MODE=false)
+docker compose --env-file .env.staging --profile staging up -d
+
+# Or set MOCK_MODE directly:
+MOCK_MODE=false docker compose --profile staging up -d
 ```
 
 **Staging Architecture:**
@@ -151,13 +155,20 @@ commands:
 
 ### Environment Variables
 
-See `.env.example` for available configuration options.
+See `.env.example` and `.env.staging` for available configuration options.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `COORDINATOR_URL` | Labgrid Coordinator WebSocket URL | `ws://coordinator:20408/ws` |
 | `COORDINATOR_REALM` | WAMP realm | `realm1` |
+| `COORDINATOR_TIMEOUT` | Connection timeout in seconds | `30` |
+| `MOCK_MODE` | `auto`, `true`, or `false` - controls command execution mode | `auto` |
 | `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:3000` |
+
+**MOCK_MODE values:**
+- `auto` (default): Falls back to mock mode if coordinator connection fails
+- `true`: Always use mock mode (for development)
+- `false`: Force real command execution (fails if coordinator unavailable)
 
 ## API Documentation
 

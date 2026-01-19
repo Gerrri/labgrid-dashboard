@@ -112,15 +112,29 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
         )
         return
 
-    # Execute the command (mock for now)
+    # Execute the command via Labgrid Coordinator
     logger.info(f"Executing command '{command.name}' on target '{target_name}' via WebSocket")
 
-    output = CommandOutput(
-        command=command.command,
-        output=f"[Mock] Executed '{command.command}' on {target_name}\nOutput would appear here.",
-        timestamp=datetime.utcnow(),
-        exit_code=0,
-    )
+    try:
+        # Execute command through the labgrid client
+        result_output, exit_code = await _labgrid_client.execute_command(
+            target_name, command.command
+        )
+
+        output = CommandOutput(
+            command=command.command,
+            output=result_output,
+            timestamp=datetime.utcnow(),
+            exit_code=exit_code,
+        )
+    except Exception as e:
+        logger.error(f"Command execution failed: {e}")
+        output = CommandOutput(
+            command=command.command,
+            output=f"Error executing command: {str(e)}",
+            timestamp=datetime.utcnow(),
+            exit_code=1,
+        )
 
     # Send output to the requesting client
     await manager.send_to(
