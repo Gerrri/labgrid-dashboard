@@ -10,6 +10,7 @@ import asyncio
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
+from app.config import get_settings
 from app.models.target import Resource, Target
 
 logger = logging.getLogger(__name__)
@@ -89,11 +90,18 @@ class LabgridClient:
         Returns:
             True if connection was successful, False otherwise.
         """
+        settings = get_settings()
+
+        # Check if mock mode is explicitly enabled
+        if settings.mock_mode.lower() == "true":
+            logger.info("Mock mode explicitly enabled via configuration")
+            self._enable_mock_mode()
+            return True
+
         try:
             logger.info(f"Connecting to Labgrid Coordinator at {self._url}...")
 
             # Try to establish WAMP connection
-            # For now, we use mock mode if coordinator is not available
             try:
                 from autobahn.asyncio.wamp import ApplicationSession, ApplicationRunner
 
@@ -125,25 +133,42 @@ class LabgridClient:
                     logger.info("Successfully connected to Labgrid Coordinator")
                     return True
                 except asyncio.TimeoutError:
-                    logger.warning(
-                        f"Connection timeout after {self._timeout}s, falling back to mock mode"
-                    )
-                    self._enable_mock_mode()
-                    return True
+                    # Check if auto-fallback to mock is allowed
+                    if settings.mock_mode.lower() == "auto":
+                        logger.warning(
+                            f"Connection timeout after {self._timeout}s, falling back to mock mode"
+                        )
+                        self._enable_mock_mode()
+                        return True
+                    else:
+                        logger.error(
+                            f"Connection timeout after {self._timeout}s, mock mode disabled"
+                        )
+                        return False
 
             except ImportError:
-                logger.warning("autobahn not available, using mock mode")
-                self._enable_mock_mode()
-                return True
+                if settings.mock_mode.lower() == "auto":
+                    logger.warning("autobahn not available, using mock mode")
+                    self._enable_mock_mode()
+                    return True
+                else:
+                    logger.error("autobahn not available and mock mode disabled")
+                    return False
             except Exception as e:
-                logger.warning(f"Failed to connect to coordinator: {e}, using mock mode")
-                self._enable_mock_mode()
-                return True
+                if settings.mock_mode.lower() == "auto":
+                    logger.warning(f"Failed to connect to coordinator: {e}, using mock mode")
+                    self._enable_mock_mode()
+                    return True
+                else:
+                    logger.error(f"Failed to connect to coordinator: {e}, mock mode disabled")
+                    return False
 
         except Exception as e:
             logger.error(f"Unexpected error during connection: {e}")
-            self._enable_mock_mode()
-            return True
+            if settings.mock_mode.lower() == "auto":
+                self._enable_mock_mode()
+                return True
+            return False
 
     def _enable_mock_mode(self) -> None:
         """Enable mock mode for development/testing."""

@@ -1,9 +1,17 @@
 # Labgrid Dashboard - Docker Compose Configuration
 # Development environment with Labgrid Coordinator, Backend, and Frontend
+#
+# Profiles:
+#   - default (no profile): Runs coordinator, backend, frontend in mock mode
+#   - staging: Adds 3 DUTs and exporters for realistic testing
 
 version: "3.8"
 
 services:
+  # =============================================================================
+  # Core Services (always running)
+  # =============================================================================
+
   # Labgrid Coordinator - WAMP router for Labgrid communication
   coordinator:
     build:
@@ -62,6 +70,116 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    restart: unless-stopped
+
+  # =============================================================================
+  # Staging Profile: DUT Containers (simulated devices)
+  # =============================================================================
+
+  # DUT 1 - Simulated device with serial-over-TCP
+  dut-1:
+    build:
+      context: ./docker/dut
+      dockerfile: Dockerfile
+    container_name: labgrid-dut-1
+    hostname: dut-1
+    profiles: ["staging"]
+    environment:
+      - DUT_NAME=dut-1
+    networks:
+      - labgrid-network
+    restart: unless-stopped
+
+  # DUT 2 - Simulated device with serial-over-TCP
+  dut-2:
+    build:
+      context: ./docker/dut
+      dockerfile: Dockerfile
+    container_name: labgrid-dut-2
+    hostname: dut-2
+    profiles: ["staging"]
+    environment:
+      - DUT_NAME=dut-2
+    networks:
+      - labgrid-network
+    restart: unless-stopped
+
+  # DUT 3 - Simulated device with serial-over-TCP
+  dut-3:
+    build:
+      context: ./docker/dut
+      dockerfile: Dockerfile
+    container_name: labgrid-dut-3
+    hostname: dut-3
+    profiles: ["staging"]
+    environment:
+      - DUT_NAME=dut-3
+    networks:
+      - labgrid-network
+    restart: unless-stopped
+
+  # =============================================================================
+  # Staging Profile: Labgrid Exporters
+  # =============================================================================
+
+  # Exporter 1 - Exports DUT-1 to Labgrid Coordinator
+  exporter-1:
+    build:
+      context: ./docker/exporter
+      dockerfile: Dockerfile
+    container_name: labgrid-exporter-1
+    hostname: exporter-1
+    profiles: ["staging"]
+    environment:
+      - DUT_HOST=dut-1
+      - DUT_PORT=5000
+      - EXPORTER_NAME=exporter-1
+      - COORDINATOR_URL=ws://coordinator:20408/ws
+    depends_on:
+      - dut-1
+      - coordinator
+    networks:
+      - labgrid-network
+    restart: unless-stopped
+
+  # Exporter 2 - Exports DUT-2 to Labgrid Coordinator
+  exporter-2:
+    build:
+      context: ./docker/exporter
+      dockerfile: Dockerfile
+    container_name: labgrid-exporter-2
+    hostname: exporter-2
+    profiles: ["staging"]
+    environment:
+      - DUT_HOST=dut-2
+      - DUT_PORT=5000
+      - EXPORTER_NAME=exporter-2
+      - COORDINATOR_URL=ws://coordinator:20408/ws
+    depends_on:
+      - dut-2
+      - coordinator
+    networks:
+      - labgrid-network
+    restart: unless-stopped
+
+  # Exporter 3 - Exports DUT-3 to Labgrid Coordinator
+  exporter-3:
+    build:
+      context: ./docker/exporter
+      dockerfile: Dockerfile
+    container_name: labgrid-exporter-3
+    hostname: exporter-3
+    profiles: ["staging"]
+    environment:
+      - DUT_HOST=dut-3
+      - DUT_PORT=5000
+      - EXPORTER_NAME=exporter-3
+      - COORDINATOR_URL=ws://coordinator:20408/ws
+    depends_on:
+      - dut-3
+      - coordinator
+    networks:
+      - labgrid-network
     restart: unless-stopped
 
 networks:

@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     app_name: str = "Labgrid Dashboard API"
     debug: bool = False
 
+    # Mock mode - set to "false" to force real coordinator connection
+    # Default: "auto" - automatically falls back to mock if coordinator unavailable
+    mock_mode: str = "auto"
+
 
 @lru_cache
 def get_settings() -> Settings:
