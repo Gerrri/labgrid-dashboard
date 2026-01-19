@@ -35,24 +35,26 @@ export function RefreshControl({
     }
   };
 
-  // Handle auto-refresh
+  // Trigger refresh when countdown reaches 0
+  useEffect(() => {
+    if (countdown === 0 && autoRefresh && autoRefreshInterval > 0) {
+      onRefresh();
+      setCountdown(autoRefreshInterval);
+    }
+  }, [countdown, autoRefresh, autoRefreshInterval, onRefresh]);
+
+  // Handle auto-refresh countdown (pure state update, no side effects)
   useEffect(() => {
     if (!autoRefresh || autoRefreshInterval <= 0) {
       return;
     }
 
     const intervalId = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          onRefresh();
-          return autoRefreshInterval;
-        }
-        return prev - 1;
-      });
+      setCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [autoRefresh, autoRefreshInterval, onRefresh]);
+  }, [autoRefresh, autoRefreshInterval]);
 
   // Reset countdown when manual refresh occurs
   useEffect(() => {
