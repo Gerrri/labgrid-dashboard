@@ -30,8 +30,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - LABGRID_COORDINATOR_HOST=coordinator
-      - LABGRID_COORDINATOR_PORT=20408
+      - COORDINATOR_URL=ws://coordinator:20408/ws
+      - COORDINATOR_REALM=realm1
+      - COORDINATOR_TIMEOUT=10
       - PYTHONUNBUFFERED=1
     depends_on:
       coordinator:
@@ -42,7 +43,7 @@ services:
       - ./backend:/app
     restart: unless-stopped
 
-  # React Frontend - Development server
+  # React Frontend - Development server with Vite
   frontend:
     build:
       context: ./frontend
@@ -51,8 +52,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_API_URL=http://localhost:8000
-      - REACT_APP_WS_URL=ws://localhost:8000/ws
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8000/api/ws
       - CHOKIDAR_USEPOLLING=true
     depends_on:
       - backend
