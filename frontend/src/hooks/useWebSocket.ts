@@ -19,13 +19,16 @@ interface UseWebSocketResult {
 }
 
 /**
- * Custom hook for WebSocket connection with reconnect logic
+ * Custom hook for WebSocket connection with reconnect logic.
+ * Handles React Strict Mode double-mount gracefully.
  */
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketResult {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  // Flag to track intentional closes (cleanup, unmount) vs unexpected disconnects
+  const intentionalCloseRef = useRef(false);
 
   const {
     onTargetUpdate,
@@ -45,6 +48,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
+
+    // Reset intentional close flag when starting a new connection
+    intentionalCloseRef.current = false;
 
     try {
       const ws = new WebSocket(WS_URL);
@@ -83,15 +89,25 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
         }
       };
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      ws.onerror = () => {
+        // Only log errors if this wasn't an intentional close (e.g., React Strict Mode cleanup)
+        // The error event doesn't contain useful information anyway (browser security)
+        if (!intentionalCloseRef.current) {
+          console.warn('WebSocket connection error, will attempt to reconnect...');
+        }
       };
 
       ws.onclose = () => {
-        console.log('WebSocket disconnected');
         setConnected(false);
-        onConnectionChange?.(false);
         wsRef.current = null;
+
+        // Skip logging and reconnection if this was an intentional close (cleanup/unmount)
+        if (intentionalCloseRef.current) {
+          return;
+        }
+
+        console.log('WebSocket disconnected');
+        onConnectionChange?.(false);
 
         // Attempt reconnection
         if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
@@ -105,7 +121,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
             RECONNECT_INTERVAL
           );
         } else {
-          console.error('Max reconnect attempts reached');
+          console.warn('WebSocket: Max reconnect attempts reached, giving up');
         }
       };
 
@@ -138,6 +154,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
 
     return () => {
       clearReconnectTimeout();
+      // Mark as intentional close to prevent error logging and reconnection attempts
+      intentionalCloseRef.current = true;
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
