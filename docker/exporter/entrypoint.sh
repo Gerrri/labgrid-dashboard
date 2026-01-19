@@ -24,7 +24,11 @@ echo "Waiting for coordinator at ${COORDINATOR_URL}..."
 sleep 5
 
 # Start the labgrid exporter
+# -c HOST:PORT format requires extracting host:port from ws://host:port/ws URL
+COORDINATOR_HOST_PORT=$(echo "${COORDINATOR_URL}" | sed 's|ws://||' | sed 's|/ws$||')
+
 echo "Starting labgrid-exporter..."
-exec labgrid-exporter --name "${EXPORTER_NAME}" \
-    --crossbar "${COORDINATOR_URL}" \
+echo "  Coordinator: ${COORDINATOR_HOST_PORT}"
+exec labgrid-exporter -c "${COORDINATOR_HOST_PORT}" \
+    --name "${EXPORTER_NAME}" \
     /config/exporter.yaml

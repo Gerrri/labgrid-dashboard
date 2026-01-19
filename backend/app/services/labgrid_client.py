@@ -2,18 +2,24 @@
 WAMP client for Labgrid Coordinator communication.
 
 This service handles the connection to the Labgrid Coordinator using the WAMP protocol
-via the autobahn library. It provides methods to query places/targets and subscribe
-to real-time updates.
+via the autobahn library. It provides methods to query places/targets, subscribe
+to real-time updates, and execute commands on targets.
 """
 
 import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional
+import socket
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.config import get_settings
-from app.models.target import Resource, Target
+from app.models.target import CommandOutput, Resource, Target
 
 logger = logging.getLogger(__name__)
+
+# Constants for serial communication
+COMMAND_TIMEOUT = 30  # seconds
+READ_BUFFER_SIZE = 4096
+COMMAND_DELAY = 0.1  # seconds to wait after sending command
 
 
 class LabgridClient:
@@ -277,6 +283,177 @@ class LabgridClient:
         except Exception as e:
             logger.error(f"Failed to subscribe to updates: {e}")
             return False
+
+    async def execute_command(
+        self, place_name: str, command: str
+    ) -> Tuple[str, int]:
+        """Execute a command on a target via the Labgrid Coordinator.
+
+        This method acquires the place, executes the command via the serial
+        console, and releases the place.
+
+        Args:
+            place_name: The name of the place/target to execute on.
+            command: The shell command to execute.
+
+        Returns:
+            Tuple of (output, exit_code). exit_code is 0 for success.
+        """
+        if self._mock_mode:
+            return self._mock_execute_command(place_name, command)
+
+        if not self._connected or not self._session:
+            logger.warning("Not connected to coordinator")
+            return ("Error: Not connected to coordinator", 1)
+
+        try:
+            # Get place info to find the serial port resource
+            place_data = await self._session.call(
+                "org.labgrid.coordinator.get_place", place_name
+            )
+            if not place_data:
+                return (f"Error: Place '{place_name}' not found", 1)
+
+            # Get resources for this place
+            resources = await self._get_place_resources(place_name)
+            if not resources:
+                return (f"Error: No resources found for '{place_name}'", 1)
+
+            # Find NetworkSerialPort resource
+            serial_resource = None
+            for res in resources:
+                if res.get("cls") == "NetworkSerialPort":
+                    serial_resource = res
+                    break
+
+            if not serial_resource:
+                return (f"Error: No NetworkSerialPort resource for '{place_name}'", 1)
+
+            # Execute command via serial connection
+            host = serial_resource.get("params", {}).get("host")
+            port = serial_resource.get("params", {}).get("port", 5000)
+
+            if not host:
+                return ("Error: Serial resource has no host configured", 1)
+
+            output = await self._execute_via_serial(host, port, command)
+            return (output, 0)
+
+        except Exception as e:
+            logger.error(f"Failed to execute command on {place_name}: {e}")
+            return (f"Error: {str(e)}", 1)
+
+    async def _get_place_resources(self, place_name: str) -> List[Dict[str, Any]]:
+        """Get resources for a place from the coordinator.
+
+        Args:
+            place_name: The place name.
+
+        Returns:
+            List of resource dictionaries.
+        """
+        try:
+            resources = await self._session.call(
+                "org.labgrid.coordinator.get_resources"
+            )
+            place_resources = []
+            for group_name, group_resources in resources.items():
+                for res_name, res_data in group_resources.items():
+                    # Check if this resource belongs to our place
+                    if place_name in res_name or group_name == place_name:
+                        place_resources.append(res_data)
+            return place_resources
+        except Exception as e:
+            logger.error(f"Failed to get resources: {e}")
+            return []
+
+    async def _execute_via_serial(
+        self, host: str, port: int, command: str
+    ) -> str:
+        """Execute a command via serial-over-TCP connection.
+
+        Args:
+            host: TCP host of the serial server.
+            port: TCP port of the serial server.
+            command: Command to execute.
+
+        Returns:
+            Command output as string.
+        """
+        loop = asyncio.get_event_loop()
+
+        def _sync_execute():
+            """Synchronous execution in thread pool."""
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(COMMAND_TIMEOUT)
+                sock.connect((host, port))
+
+                # Send command with newline
+                sock.sendall(f"{command}\n".encode("utf-8"))
+
+                # Wait for response
+                import time
+                time.sleep(COMMAND_DELAY)
+
+                # Read output
+                output_parts = []
+                sock.setblocking(False)
+                try:
+                    while True:
+                        try:
+                            data = sock.recv(READ_BUFFER_SIZE)
+                            if not data:
+                                break
+                            output_parts.append(data.decode("utf-8", errors="replace"))
+                        except BlockingIOError:
+                            break
+                        except socket.timeout:
+                            break
+                except Exception:
+                    pass
+
+                sock.close()
+                return "".join(output_parts)
+
+            except socket.timeout:
+                return f"Error: Connection timeout to {host}:{port}"
+            except ConnectionRefusedError:
+                return f"Error: Connection refused to {host}:{port}"
+            except Exception as e:
+                return f"Error: {str(e)}"
+
+        # Execute in thread pool to avoid blocking
+        output = await loop.run_in_executor(None, _sync_execute)
+        return output
+
+    def _mock_execute_command(self, place_name: str, command: str) -> Tuple[str, int]:
+        """Execute a mock command for development/testing.
+
+        Args:
+            place_name: The place name.
+            command: The command to execute.
+
+        Returns:
+            Tuple of (mock_output, exit_code).
+        """
+        # Simulate some realistic outputs for common commands
+        mock_outputs = {
+            "date": "Mon Jan 19 08:30:00 UTC 2026",
+            "hostname": place_name,
+            "uptime": " 08:30:00 up 1 day,  2:15,  1 user,  load average: 0.15, 0.10, 0.05",
+            "uname -a": f"Linux {place_name} 5.15.0-generic #1 SMP PREEMPT x86_64 GNU/Linux",
+            "whoami": "root",
+            "pwd": "/root",
+            "id": "uid=0(root) gid=0(root) groups=0(root)",
+            "cat /etc/os-release": 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nNAME="Debian GNU/Linux"\nVERSION_ID="12"',
+        }
+
+        if command in mock_outputs:
+            return (mock_outputs[command], 0)
+
+        # Default mock output
+        return (f"[Mock] Executed '{command}' on {place_name}\nCommand completed.", 0)
 
     def _parse_places(self, places_data: Dict[str, Any]) -> List[Target]:
         """Parse places data from the coordinator into Target objects.
