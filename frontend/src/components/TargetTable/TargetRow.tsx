@@ -1,25 +1,38 @@
-import { useState } from 'react';
 import type { Target, CommandOutput } from '../../types';
 import { StatusBadge } from './StatusBadge';
 import { CommandPanel } from '../CommandPanel';
 
 interface TargetRowProps {
   target: Target;
+  expanded: boolean;
+  onToggleExpand: (targetName: string) => void;
   onCommandComplete?: (targetName: string, output: CommandOutput) => void;
+  commandOutputs?: CommandOutput[];
+  onCommandOutputsChange?: (targetName: string, outputs: CommandOutput[]) => void;
 }
 
 /**
  * Single row displaying target information
+ * Expanded state is controlled by parent to preserve across refreshes
  */
-export function TargetRow({ target, onCommandComplete }: TargetRowProps) {
-  const [expanded, setExpanded] = useState(false);
-
+export function TargetRow({
+  target,
+  expanded,
+  onToggleExpand,
+  onCommandComplete,
+  commandOutputs,
+  onCommandOutputsChange,
+}: TargetRowProps) {
   const toggleExpand = () => {
-    setExpanded((prev) => !prev);
+    onToggleExpand(target.name);
   };
 
   const handleCommandComplete = (output: CommandOutput) => {
     onCommandComplete?.(target.name, output);
+  };
+
+  const handleOutputsChange = (outputs: CommandOutput[]) => {
+    onCommandOutputsChange?.(target.name, outputs);
   };
 
   const renderIpAddress = () => {
@@ -98,7 +111,9 @@ export function TargetRow({ target, onCommandComplete }: TargetRowProps) {
                   <CommandPanel
                     targetName={target.name}
                     initialOutputs={target.last_command_outputs}
+                    persistedOutputs={commandOutputs}
                     onCommandComplete={handleCommandComplete}
+                    onOutputsChange={handleOutputsChange}
                   />
                 ) : (
                   <div className="commands-offline">

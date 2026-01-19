@@ -22,6 +22,11 @@ function App() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  
+  // Store command outputs at App level to preserve across refreshes
+  const [commandOutputs, setCommandOutputs] = useState<Map<string, CommandOutput[]>>(
+    new Map()
+  );
 
   // Fetch health info on mount
   useEffect(() => {
@@ -107,6 +112,18 @@ function App() {
     []
   );
 
+  // Handler to update command outputs for a specific target
+  const handleCommandOutputsChange = useCallback(
+    (targetName: string, outputs: CommandOutput[]) => {
+      setCommandOutputs((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(targetName, outputs);
+        return newMap;
+      });
+    },
+    []
+  );
+
   return (
     <div className="app">
       <header className="app-header">
@@ -158,6 +175,8 @@ function App() {
             targets={targets}
             loading={loading}
             onCommandComplete={handleCommandComplete}
+            commandOutputs={commandOutputs}
+            onCommandOutputsChange={handleCommandOutputsChange}
           />
         )}
       </main>
