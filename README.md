@@ -316,4 +316,4 @@ Please review the [AGENTS.md](AGENTS.md) and [agent-rules/](agent-rules/) for co
 
 ## License
 
-*License to be determined.*
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
