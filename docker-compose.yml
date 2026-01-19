@@ -40,7 +40,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - COORDINATOR_URL=ws://coordinator:20408/ws
+      - COORDINATOR_URL=ws://coordinator:20408
       - COORDINATOR_REALM=realm1
       - COORDINATOR_TIMEOUT=30
       - PYTHONUNBUFFERED=1
