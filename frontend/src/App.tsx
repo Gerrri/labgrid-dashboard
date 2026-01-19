@@ -9,7 +9,7 @@ import {
   RefreshControl,
 } from './components/common';
 import { api } from './services/api';
-import type { Target, CommandOutput, HealthResponse } from './types';
+import type { Target, CommandOutput, HealthResponse, ScheduledCommand } from './types';
 import './App.css';
 
 const AUTO_REFRESH_INTERVAL = 30; // seconds
@@ -22,13 +22,14 @@ function App() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [scheduledCommands, setScheduledCommands] = useState<ScheduledCommand[]>([]);
   
   // Store command outputs at App level to preserve across refreshes
   const [commandOutputs, setCommandOutputs] = useState<Map<string, CommandOutput[]>>(
     new Map()
   );
 
-  // Fetch health info on mount
+  // Fetch health info and scheduled commands on mount
   useEffect(() => {
     const fetchHealth = async () => {
       try {
@@ -38,7 +39,18 @@ function App() {
         console.error('Failed to fetch health info:', err);
       }
     };
+    
+    const fetchScheduledCommands = async () => {
+      try {
+        const response = await api.getScheduledCommands();
+        setScheduledCommands(response.data.commands);
+      } catch (err) {
+        console.error('Failed to fetch scheduled commands:', err);
+      }
+    };
+    
     fetchHealth();
+    fetchScheduledCommands();
   }, []);
 
   // Update lastUpdated when targets are fetched
@@ -177,6 +189,7 @@ function App() {
             onCommandComplete={handleCommandComplete}
             commandOutputs={commandOutputs}
             onCommandOutputsChange={handleCommandOutputsChange}
+            scheduledCommands={scheduledCommands}
           />
         )}
       </main>

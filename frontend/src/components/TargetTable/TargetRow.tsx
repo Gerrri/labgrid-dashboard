@@ -1,4 +1,4 @@
-import type { Target, CommandOutput } from '../../types';
+import type { Target, CommandOutput, ScheduledCommand } from '../../types';
 import { StatusBadge } from './StatusBadge';
 import { CommandPanel } from '../CommandPanel';
 
@@ -9,6 +9,8 @@ interface TargetRowProps {
   onCommandComplete?: (targetName: string, output: CommandOutput) => void;
   commandOutputs?: CommandOutput[];
   onCommandOutputsChange?: (targetName: string, outputs: CommandOutput[]) => void;
+  scheduledCommands?: ScheduledCommand[];
+  totalColumns?: number;
 }
 
 /**
@@ -22,6 +24,8 @@ export function TargetRow({
   onCommandComplete,
   commandOutputs,
   onCommandOutputsChange,
+  scheduledCommands = [],
+  totalColumns = 5,
 }: TargetRowProps) {
   const toggleExpand = () => {
     onToggleExpand(target.name);
@@ -56,6 +60,26 @@ export function TargetRow({
     return <span>{target.ip_address}</span>;
   };
 
+  /**
+   * Render the scheduled command output for a given command
+   */
+  const renderScheduledOutput = (cmdName: string) => {
+    const output = target.scheduled_outputs?.[cmdName];
+    if (!output) {
+      return <span className="text-muted">-</span>;
+    }
+
+    const isError = output.exit_code !== 0;
+    return (
+      <span
+        className={`scheduled-output ${isError ? 'error' : ''}`}
+        title={`Last updated: ${new Date(output.timestamp).toLocaleString()}`}
+      >
+        {output.output}
+      </span>
+    );
+  };
+
   const canExecuteCommands = target.status !== 'offline';
 
   return (
@@ -69,6 +93,11 @@ export function TargetRow({
           {target.acquired_by || <span className="text-muted">-</span>}
         </td>
         <td className="target-ip">{renderIpAddress()}</td>
+        {scheduledCommands.map((cmd) => (
+          <td key={cmd.name} className="target-scheduled-output">
+            {renderScheduledOutput(cmd.name)}
+          </td>
+        ))}
         <td className="target-actions">
           <button
             className="btn-expand"
@@ -82,7 +111,7 @@ export function TargetRow({
       </tr>
       {expanded && (
         <tr className="target-details-row">
-          <td colSpan={5}>
+          <td colSpan={totalColumns}>
             <div className="target-details">
               {/* Resources Section */}
               <div className="details-section">

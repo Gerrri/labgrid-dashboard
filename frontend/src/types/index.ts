@@ -17,6 +17,26 @@ export interface CommandOutput {
 }
 
 /**
+ * Output from a scheduled command for a specific target
+ */
+export interface ScheduledCommandOutput {
+  command_name: string;
+  output: string;
+  timestamp: string;
+  exit_code: number;
+}
+
+/**
+ * Scheduled command definition (from config)
+ */
+export interface ScheduledCommand {
+  name: string;
+  command: string;
+  interval_seconds: number;
+  description: string;
+}
+
+/**
  * Target/DUT status
  */
 export type TargetStatus = 'available' | 'acquired' | 'offline';
@@ -32,6 +52,7 @@ export interface Target {
   web_url: string | null;
   resources: Resource[];
   last_command_outputs: CommandOutput[];
+  scheduled_outputs: Record<string, ScheduledCommandOutput>;
 }
 
 /**
@@ -52,6 +73,13 @@ export interface TargetsResponse {
 }
 
 /**
+ * API response for scheduled commands
+ */
+export interface ScheduledCommandsResponse {
+  commands: ScheduledCommand[];
+}
+
+/**
  * API response for health check
  */
 export interface HealthResponse {
@@ -66,6 +94,7 @@ export interface HealthResponse {
 export type WSMessageType =
   | 'target_update'
   | 'command_output'
+  | 'scheduled_output'
   | 'targets_list'
   | 'subscribe'
   | 'execute_command';
@@ -94,6 +123,18 @@ export interface WSCommandOutputMessage extends WSMessage {
   data: {
     target_name: string;
     output: CommandOutput;
+  };
+}
+
+/**
+ * WebSocket scheduled output message
+ */
+export interface WSScheduledOutputMessage extends WSMessage {
+  type: 'scheduled_output';
+  data: {
+    command_name: string;
+    target: string;
+    output: ScheduledCommandOutput;
   };
 }
 

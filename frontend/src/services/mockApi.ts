@@ -4,7 +4,18 @@ import type {
   Command,
   CommandOutput,
   HealthResponse,
+  ScheduledCommand,
+  ScheduledCommandsResponse,
 } from '../types';
+
+/**
+ * Mock scheduled commands configuration
+ */
+const mockScheduledCommands: ScheduledCommand[] = [
+  { name: 'Uptime', command: 'uptime -p', interval_seconds: 60, description: 'System uptime' },
+  { name: 'Load', command: 'cat /proc/loadavg | cut -d\' \' -f1-3', interval_seconds: 30, description: 'System load average' },
+  { name: 'Memory', command: 'free -h | grep Mem | awk \'{print $3"/"$2}\'', interval_seconds: 60, description: 'Memory usage' },
+];
 
 /**
  * Mock data for testing without backend
@@ -34,6 +45,11 @@ const mockTargets: Target[] = [
         exit_code: 0,
       },
     ],
+    scheduled_outputs: {
+      'Uptime': { command_name: 'Uptime', output: 'up 3 days, 2 hours', timestamp: new Date().toISOString(), exit_code: 0 },
+      'Load': { command_name: 'Load', output: '0.15 0.10 0.05', timestamp: new Date().toISOString(), exit_code: 0 },
+      'Memory': { command_name: 'Memory', output: '256Mi/1.0Gi', timestamp: new Date().toISOString(), exit_code: 0 },
+    },
   },
   {
     name: 'imx8-board-02',
@@ -55,6 +71,11 @@ const mockTargets: Target[] = [
         exit_code: 0,
       },
     ],
+    scheduled_outputs: {
+      'Uptime': { command_name: 'Uptime', output: 'up 12 hours', timestamp: new Date().toISOString(), exit_code: 0 },
+      'Load': { command_name: 'Load', output: '0.82 0.65 0.50', timestamp: new Date().toISOString(), exit_code: 0 },
+      'Memory': { command_name: 'Memory', output: '1.8Gi/4.0Gi', timestamp: new Date().toISOString(), exit_code: 0 },
+    },
   },
   {
     name: 'stm32-dev-03',
@@ -69,6 +90,7 @@ const mockTargets: Target[] = [
       },
     ],
     last_command_outputs: [],
+    scheduled_outputs: {},
   },
   {
     name: 'jetson-nano-04',
@@ -94,6 +116,11 @@ const mockTargets: Target[] = [
         exit_code: 0,
       },
     ],
+    scheduled_outputs: {
+      'Uptime': { command_name: 'Uptime', output: 'up 1 week, 2 days', timestamp: new Date().toISOString(), exit_code: 0 },
+      'Load': { command_name: 'Load', output: '0.45 0.38 0.30', timestamp: new Date().toISOString(), exit_code: 0 },
+      'Memory': { command_name: 'Memory', output: '2.1Gi/4.0Gi', timestamp: new Date().toISOString(), exit_code: 0 },
+    },
   },
   {
     name: 'beaglebone-05',
@@ -115,6 +142,11 @@ const mockTargets: Target[] = [
         exit_code: 0,
       },
     ],
+    scheduled_outputs: {
+      'Uptime': { command_name: 'Uptime', output: 'up 5 hours', timestamp: new Date().toISOString(), exit_code: 0 },
+      'Load': { command_name: 'Load', output: '0.25 0.20 0.15', timestamp: new Date().toISOString(), exit_code: 0 },
+      'Memory': { command_name: 'Memory', output: '128Mi/512Mi', timestamp: new Date().toISOString(), exit_code: 0 },
+    },
   },
 ];
 
@@ -182,6 +214,15 @@ export const mockApi = {
         status: 'ok',
         coordinator_connected: true,
         mock_mode: true,
+      },
+    };
+  },
+
+  getScheduledCommands: async (): Promise<{ data: ScheduledCommandsResponse }> => {
+    await delay(100);
+    return {
+      data: {
+        commands: mockScheduledCommands,
       },
     };
   },
