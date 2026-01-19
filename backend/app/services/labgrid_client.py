@@ -50,6 +50,8 @@ class LabgridClient:
         self._mock_mode = False
         self._resources_cache: Dict[str, Dict[str, Any]] = {}
         self._places_cache: Dict[str, Dict[str, Any]] = {}
+        # Cache of all known exporters (persists offline exporters)
+        self._known_exporters_cache: Dict[str, Dict[str, Any]] = {}
 
         # Mock data for development/testing when coordinator is not available
         self._mock_places: Dict[str, Dict[str, Any]] = {
@@ -177,45 +179,71 @@ class LabgridClient:
             return False
 
     async def _refresh_cache(self) -> None:
-        """Refresh the local cache of resources and places from the session."""
+        """Refresh the local cache of resources and places from the session.
+        
+        This method preserves knowledge of previously seen exporters. When an
+        exporter goes offline, it remains in _known_exporters_cache with
+        avail=False instead of being removed entirely.
+        """
         if not self._session:
             return
             
         try:
             # Get resources from session (exporter -> group -> resource_type -> ResourceEntry)
-            self._resources_cache = {}
+            current_resources: Dict[str, Dict[str, Any]] = {}
+            current_exporter_names: set = set()
+            
             for exporter_name, exporter_data in self._session.resources.items():
+                current_exporter_names.add(exporter_name)
                 for group_name, group_resources in exporter_data.items():
                     for res_type, res_entry in group_resources.items():
-                        # ResourceEntry has params as direct attribute
+                        # ResourceEntry attributes need careful handling - properties may raise KeyError
                         params = {}
-                        if hasattr(res_entry, 'params'):
-                            params = dict(res_entry.params) if res_entry.params else {}
-                        elif hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
-                            params = res_entry.data.get('params', {})
-                        
-                        # Get cls attribute
                         cls_name = res_type
-                        if hasattr(res_entry, 'cls'):
-                            cls_name = res_entry.cls
-                        elif hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
-                            cls_name = res_entry.data.get('cls', res_type)
-                        
-                        # Get acquired attribute
                         acquired = None
-                        if hasattr(res_entry, 'acquired'):
-                            acquired = res_entry.acquired
-                        elif hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
-                            acquired = res_entry.data.get('acquired')
-                        
-                        # Get avail attribute
                         avail = True
-                        if hasattr(res_entry, 'avail'):
-                            avail = res_entry.avail
-                        elif hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
-                            avail = res_entry.data.get('avail', True)
+                        params_available = True  # Track if params could be loaded
                         
-                        self._resources_cache[exporter_name] = {
+                        try:
+                            # Try to get params - labgrid property may raise KeyError when offline
+                            params = dict(res_entry.params) if res_entry.params else {}
+                        except (KeyError, AttributeError):
+                            # Fallback to data dict
+                            if hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
+                                params = res_entry.data.get('params', {})
+                            # Mark that params couldn't be loaded from property
+                            params_available = False
+                        
+                        try:
+                            # Get cls attribute
+                            cls_name = res_entry.cls
+                        except (KeyError, AttributeError):
+                            if hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
+                                cls_name = res_entry.data.get('cls', res_type)
+                        
+                        try:
+                            # Get acquired attribute
+                            acquired = res_entry.acquired
+                        except (KeyError, AttributeError):
+                            if hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
+                                acquired = res_entry.data.get('acquired')
+                        
+                        try:
+                            # Get avail attribute - this is the key indicator of online/offline status
+                            avail = res_entry.avail
+                        except (KeyError, AttributeError):
+                            if hasattr(res_entry, 'data') and isinstance(res_entry.data, dict):
+                                avail = res_entry.data.get('avail', True)
+                            else:
+                                avail = True  # Default, will be overridden below
+                        
+                        # If params couldn't be loaded, the exporter is likely offline
+                        # Labgrid returns the exporter but with empty/missing data
+                        if not params_available or not params:
+                            avail = False
+                            logger.debug(f"Exporter '{exporter_name}' marked offline (no params available)")
+                        
+                        current_resources[exporter_name] = {
                             res_type: {
                                 "cls": cls_name,
                                 "params": params,
@@ -223,6 +251,21 @@ class LabgridClient:
                                 "avail": avail,
                             }
                         }
+            
+            # Update known exporters cache with current online exporters
+            for exporter_name, resources in current_resources.items():
+                self._known_exporters_cache[exporter_name] = resources
+            
+            # Mark previously known exporters that are now offline
+            for exporter_name in list(self._known_exporters_cache.keys()):
+                if exporter_name not in current_exporter_names:
+                    # Exporter is offline - mark all its resources as unavailable
+                    for res_type in self._known_exporters_cache[exporter_name]:
+                        self._known_exporters_cache[exporter_name][res_type]["avail"] = False
+                    logger.info(f"Exporter '{exporter_name}' is now offline")
+            
+            # _resources_cache now includes all known exporters (online + offline)
+            self._resources_cache = dict(self._known_exporters_cache)
             
             # Get places from session (place_name -> Place object)
             self._places_cache = {}
@@ -233,8 +276,10 @@ class LabgridClient:
                     "comment": getattr(place_obj, 'comment', ''),
                     "tags": dict(getattr(place_obj, 'tags', {})),
                 }
-                
-            logger.debug(f"Cache refreshed: {len(self._resources_cache)} resources, {len(self._places_cache)} places")
+            
+            online_count = len(current_exporter_names)
+            offline_count = len(self._known_exporters_cache) - online_count
+            logger.debug(f"Cache refreshed: {online_count} online, {offline_count} offline exporters, {len(self._places_cache)} places")
             
         except Exception as e:
             logger.error(f"Failed to refresh cache: {e}")
@@ -260,6 +305,7 @@ class LabgridClient:
         self._mock_mode = False
         self._resources_cache = {}
         self._places_cache = {}
+        self._known_exporters_cache = {}
         logger.info("Disconnected from Labgrid Coordinator")
 
     def _resolve_hostname_to_ip(self, hostname: str) -> Optional[str]:
@@ -308,15 +354,6 @@ class LabgridClient:
                 for res_type, res_data in exporter_resources.items():
                     params = res_data.get("params", {})
                     
-                    # Extract exporter hostname from params.extra.proxy
-                    # This is the hostname of the exporter machine
-                    extra = params.get("extra", {})
-                    exporter_hostname = extra.get("proxy") or exporter_name
-                    
-                    # Resolve exporter hostname to IP address
-                    if exporter_hostname and not ip_address:
-                        ip_address = self._resolve_hostname_to_ip(exporter_hostname)
-                    
                     # Track acquired status
                     if res_data.get("acquired"):
                         acquired_by = res_data.get("acquired")
@@ -330,6 +367,16 @@ class LabgridClient:
                         type=res_data.get("cls", res_type),
                         params=params,
                     ))
+                    
+                    # Extract exporter hostname from params.extra.proxy
+                    # This is the hostname of the exporter machine
+                    extra = params.get("extra", {})
+                    exporter_hostname = extra.get("proxy") or exporter_name
+                    
+                    # Only resolve IP for online exporters to avoid DNS timeouts
+                    # The hostname resolution can block if the host is unreachable
+                    if exporter_hostname and not ip_address and res_data.get("avail", True):
+                        ip_address = self._resolve_hostname_to_ip(exporter_hostname)
                 
                 # Determine status based on availability and acquisition
                 if not is_available:
