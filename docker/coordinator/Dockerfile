@@ -12,17 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install labgrid and its dependencies
 RUN pip install --no-cache-dir \
-    labgrid>=24.0 \
-    crossbar>=23.6.0
+    labgrid>=24.0
 
-# Create configuration directory
-RUN mkdir -p /etc/labgrid
-
-# Copy coordinator configuration
-COPY coordinator.yaml /etc/labgrid/coordinator.yaml
-
-# Expose WAMP port (Crossbar.io)
+# Expose WAMP port
 EXPOSE 20408
 
 # Run the labgrid coordinator
-CMD ["labgrid-coordinator", "--config", "/etc/labgrid/coordinator.yaml"]
+# -l specifies the listen address and port
+CMD ["labgrid-coordinator", "-l", "0.0.0.0:20408"]
