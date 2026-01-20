@@ -5,8 +5,6 @@
 #   - default (no profile): Runs coordinator, backend, frontend in mock mode
 #   - staging: Adds 3 DUTs and exporters for realistic testing
 
-version: "3.8"
-
 services:
   # =============================================================================
   # Core Services (always running)
@@ -51,8 +49,9 @@ services:
         condition: service_healthy
     networks:
       - labgrid-network
-    volumes:
-      - ./backend:/app
+    # Note: Volumes removed for staging/production. Use for local dev only.
+    # volumes:
+    #   - ./backend:/app
     restart: unless-stopped
 
   # React Frontend - Development server with Vite
@@ -71,9 +70,10 @@ services:
       - backend
     networks:
       - labgrid-network
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+    # Note: Volumes removed for staging/production. Use for local dev only.
+    # volumes:
+    #   - ./frontend:/app
+    #   - /app/node_modules
     restart: unless-stopped
 
   # =============================================================================
