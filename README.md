@@ -53,11 +53,8 @@ docker compose up -d
 Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands are executed on actual containers via Serial-over-TCP.
 
 ```bash
-# Start with real command execution (MOCK_MODE=false)
+# Start with real command execution
 docker compose --env-file .env.staging --profile staging up -d
-
-# Or set MOCK_MODE directly:
-MOCK_MODE=false docker compose --profile staging up -d
 ```
 
 **Auto-Acquire Feature:**
@@ -193,15 +190,9 @@ See `.env.example` for the full list of available configuration options.
 | `COORDINATOR_URL` | Labgrid Coordinator WebSocket URL | `ws://coordinator:20408` |
 | `COORDINATOR_REALM` | WAMP realm | `realm1` |
 | `COORDINATOR_TIMEOUT` | Connection timeout in seconds | `30` |
-| `MOCK_MODE` | `auto`, `true`, or `false` - controls command execution mode | `auto` |
 | `COMMANDS_FILE` | Path to commands configuration file | `commands.yaml` |
 | `DEBUG` | Enable debug mode | `false` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:3000,http://localhost:5173` |
-
-**MOCK_MODE values:**
-- `auto` (default): Falls back to mock mode if coordinator connection fails
-- `true`: Always use mock mode (for development)
-- `false`: Force real command execution (fails if coordinator unavailable)
 
 #### Frontend Configuration
 
@@ -304,7 +295,6 @@ docker compose --profile staging logs dut-1
 ```
 
 **Commands not executing:**
-- Ensure MOCK_MODE is not set to "true" in backend environment
 - Verify exporter is registered with coordinator
 - Check that DUT container is running: `docker compose --profile staging ps dut-1`
 
