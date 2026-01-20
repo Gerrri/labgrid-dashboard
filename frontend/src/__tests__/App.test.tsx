@@ -13,7 +13,6 @@ vi.mock('../services/api', () => ({
       data: {
         status: 'healthy',
         coordinator_connected: true,
-        mock_mode: true,
         service: 'labgrid-dashboard-backend',
       },
     }),
@@ -72,11 +71,11 @@ describe('App', () => {
     });
   });
 
-  it('shows mock mode badge when in mock mode', async () => {
+  it('shows connection status when connected', async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Mock Mode')).toBeInTheDocument();
+      expect(screen.getByText('Connected')).toBeInTheDocument();
     });
   });
 

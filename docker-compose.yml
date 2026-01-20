@@ -2,7 +2,7 @@
 # Development environment with Labgrid Coordinator, Backend, and Frontend
 #
 # Profiles:
-#   - default (no profile): Runs coordinator, backend, frontend in mock mode
+#   - default (no profile): Runs coordinator, backend, frontend
 #   - staging: Adds 3 DUTs and exporters for realistic testing
 
 version: "3.8"
@@ -23,15 +23,19 @@ services:
     networks:
       - labgrid-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 20408)); s.close()"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.socket(); s.connect(('localhost', 20408)); s.close()",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
   # FastAPI Backend - REST API and WebSocket server
-  # In staging profile: MOCK_MODE=false for real command execution
-  # In default mode: MOCK_MODE=auto (falls back to mock if coordinator unavailable)
   backend:
     build:
       context: ./backend
@@ -44,8 +48,6 @@ services:
       - COORDINATOR_REALM=realm1
       - COORDINATOR_TIMEOUT=30
       - PYTHONUNBUFFERED=1
-      # Use MOCK_MODE=false to force real execution, auto to fallback gracefully
-      - MOCK_MODE=${MOCK_MODE:-auto}
     depends_on:
       coordinator:
         condition: service_healthy
