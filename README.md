@@ -8,6 +8,10 @@ A web-based dashboard for monitoring and interacting with devices (DUTs) managed
 > 
 > While functional, the code may contain patterns, approaches, or implementations that were generated with significant AI assistance. Use in production environments should be done with appropriate review and testing.
 
+## 🎬 Demo
+
+![Labgrid Dashboard Demo](docs/assets/screen.gif)
+
 ## What is this project?
 
 Labgrid Dashboard provides a real-time web interface to:
