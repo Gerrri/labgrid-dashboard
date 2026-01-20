@@ -49,9 +49,6 @@ services:
         condition: service_healthy
     networks:
       - labgrid-network
-    # Note: Volumes removed for staging/production. Use for local dev only.
-    # volumes:
-    #   - ./backend:/app
     restart: unless-stopped
 
   # React Frontend - Development server with Vite
@@ -70,10 +67,6 @@ services:
       - backend
     networks:
       - labgrid-network
-    # Note: Volumes removed for staging/production. Use for local dev only.
-    # volumes:
-    #   - ./frontend:/app
-    #   - /app/node_modules
     restart: unless-stopped
 
   # =============================================================================
