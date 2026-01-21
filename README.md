@@ -5,7 +5,7 @@ A web-based dashboard for monitoring and interacting with devices (DUTs) managed
 ## ⚠️ Disclaimer
 
 > **This project is largely developed using AI-assisted "vibe coding".**
-> 
+>
 > While functional, the code may contain patterns, approaches, or implementations that were generated with significant AI assistance. Use in production environments should be done with appropriate review and testing.
 
 ## 🎬 Demo
@@ -32,7 +32,7 @@ Labgrid Dashboard provides a real-time web interface to:
 | Frontend | React 19 + TypeScript + Vite |
 | Backend | Python 3.11+ + FastAPI |
 | Real-time | WebSockets |
-| Labgrid Communication | WAMP Protocol (via autobahn) |
+| Labgrid Communication | gRPC (labgrid 24.0+) |
 | Development | Docker Compose |
 | Testing | Vitest (Frontend), pytest (Backend) |
 
@@ -47,7 +47,7 @@ Labgrid Dashboard provides a real-time web interface to:
 ## Deployment Modes
 
 ### Development Mode (Default)
-Uses mock data without real Labgrid infrastructure. Ideal for frontend development and testing.
+Starts the full stack (Coordinator, Backend, Frontend) for local development.
 
 ```bash
 docker compose up -d
@@ -58,7 +58,7 @@ Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. C
 
 ```bash
 # Start with real command execution
-docker compose --env-file .env.staging --profile staging up -d
+docker compose --profile staging up -d --build
 ```
 
 **Auto-Acquire Feature:**
@@ -85,11 +85,11 @@ This demonstrates the "acquired" status in the dashboard with:
 │  ┌────▼────┐   ┌────▼────┐   ┌────▼────┐                   │
 │  │Exporter1│   │Exporter2│   │Exporter3│  (labgrid)        │
 │  └────┬────┘   └────┬────┘   └────┬────┘                   │
-│       └──────────┬──┴──────────────┘ WAMP                  │
+│       └──────────┬──┴──────────────┘ gRPC                  │
 │            ┌─────▼─────┐                                    │
-│            │Coordinator│  (Crossbar.io)                    │
+│            │Coordinator│  (labgrid 24.0+)                  │
 │            └─────┬─────┘                                    │
-│                  │ WAMP                                     │
+│                  │ gRPC                                     │
 │            ┌─────▼─────┐                                    │
 │            │  Backend  │  (FastAPI)                         │
 │            └─────┬─────┘                                    │
@@ -104,8 +104,8 @@ This demonstrates the "acquired" status in the dashboard with:
 
 | Command | Description |
 |---------|-------------|
-| `docker compose up -d` | Start in development mode (mock data) |
-| `docker compose --profile staging up -d` | Start in staging mode (real DUTs) |
+| `docker compose up -d` | Start in development mode |
+| `docker compose --profile staging up -d --build` | Start in staging mode (simulated DUTs) |
 | `docker compose --profile staging down` | Stop all services |
 | `docker compose --profile staging ps` | Show service status |
 | `docker compose --profile staging logs -f` | Follow all logs |
@@ -128,8 +128,7 @@ uvicorn app.main:app --reload --port 8000
 ```bash
 cd frontend
 npm install
-npm run dev        # With backend
-npm run dev:mock   # Without backend (mock data)
+npm run dev        # Start development server
 ```
 
 > 📖 See [frontend/README.md](frontend/README.md) for more frontend-specific details.
@@ -191,8 +190,8 @@ See `.env.example` for the full list of available configuration options.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `COORDINATOR_URL` | Labgrid Coordinator WebSocket URL | `ws://coordinator:20408` |
-| `COORDINATOR_REALM` | WAMP realm | `realm1` |
+| `COORDINATOR_URL` | Labgrid Coordinator gRPC address (host:port or ws://host:port for legacy config) | `coordinator:20408` |
+| `COORDINATOR_REALM` | Realm (kept for compatibility, not used in gRPC) | `realm1` |
 | `COORDINATOR_TIMEOUT` | Connection timeout in seconds | `30` |
 | `COMMANDS_FILE` | Path to commands configuration file | `commands.yaml` |
 | `DEBUG` | Enable debug mode | `false` |
@@ -206,7 +205,6 @@ See `frontend/.env.example` for frontend-specific variables:
 |----------|-------------|---------|
 | `VITE_API_URL` | Backend API URL | `http://localhost:8000` |
 | `VITE_WS_URL` | Backend WebSocket URL | `ws://localhost:8000/api/ws` |
-| `VITE_USE_MOCK` | Use mock data instead of backend | `false` |
 
 #### Labgrid CLI Variables (used by init-acquire container)
 
@@ -271,8 +269,7 @@ labgrid-dashboard/
 ├── agent-rules/            # AI agent coding rules
 ├── plans/                  # Architecture documentation
 ├── .env.example            # Environment variables template
-├── .env.staging            # Staging environment overrides
-├── docker-compose.yml      # Development environment
+├── docker-compose.yml      # Docker Compose configuration
 └── quick-start.md          # Quick start guide
 ```
 
