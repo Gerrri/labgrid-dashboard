@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { TargetTable } from "./components/TargetTable";
-import { useTargets } from "./hooks/useTargets";
+import { usePresetsWithTargets } from "./hooks/usePresetsWithTargets";
 import { useWebSocket } from "./hooks/useWebSocket";
 import {
   LoadingSpinner,
@@ -9,12 +9,7 @@ import {
   RefreshControl,
 } from "./components/common";
 import { api } from "./services/api";
-import type {
-  Target,
-  CommandOutput,
-  HealthResponse,
-  ScheduledCommand,
-} from "./types";
+import type { Target, CommandOutput, HealthResponse } from "./types";
 import "./App.css";
 
 const AUTO_REFRESH_INTERVAL = 30; // seconds
@@ -23,20 +18,22 @@ const AUTO_REFRESH_INTERVAL = 30; // seconds
  * Main application component
  */
 function App() {
-  const { targets, loading, error, refetch } = useTargets();
+  const { presetGroups, loading, error, refetch } = usePresetsWithTargets();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const [scheduledCommands, setScheduledCommands] = useState<
-    ScheduledCommand[]
-  >([]);
 
   // Store command outputs at App level to preserve across refreshes
   const [commandOutputs, setCommandOutputs] = useState<
     Map<string, CommandOutput[]>
   >(new Map());
 
-  // Fetch health info and scheduled commands on mount
+  // Calculate total targets from all preset groups
+  const totalTargets = useMemo(() => {
+    return presetGroups.reduce((sum, group) => sum + group.targets.length, 0);
+  }, [presetGroups]);
+
+  // Fetch health info on mount
   useEffect(() => {
     const fetchHealth = async () => {
       try {
@@ -47,25 +44,15 @@ function App() {
       }
     };
 
-    const fetchScheduledCommands = async () => {
-      try {
-        const response = await api.getScheduledCommands();
-        setScheduledCommands(response.data.commands);
-      } catch (err) {
-        console.error("Failed to fetch scheduled commands:", err);
-      }
-    };
-
     fetchHealth();
-    fetchScheduledCommands();
   }, []);
 
   // Update lastUpdated when targets are fetched
   useEffect(() => {
-    if (!loading && targets.length > 0) {
+    if (!loading && totalTargets > 0) {
       setLastUpdated(new Date());
     }
-  }, [loading, targets]);
+  }, [loading, totalTargets]);
 
   const handleTargetUpdate = useCallback(
     (updatedTarget: Target) => {
@@ -180,7 +167,7 @@ function App() {
       </header>
 
       <main className="app-main">
-        {loading && targets.length === 0 && (
+        {loading && totalTargets === 0 && (
           <LoadingSpinner size="large" message="Loading targets..." />
         )}
 
@@ -192,7 +179,7 @@ function App() {
           />
         )}
 
-        {!loading && !error && targets.length === 0 && (
+        {!loading && !error && totalTargets === 0 && (
           <div className="no-targets">
             <p>No targets found</p>
             <button className="btn-primary" onClick={handleRefresh}>
@@ -201,23 +188,26 @@ function App() {
           </div>
         )}
 
-        {targets.length > 0 && (
+        {/* Render a table for each preset group (only presets with targets) */}
+        {presetGroups.map((group) => (
           <TargetTable
-            targets={targets}
+            key={group.preset.id}
+            targets={group.targets}
             loading={loading}
             onCommandComplete={handleCommandComplete}
             commandOutputs={commandOutputs}
             onCommandOutputsChange={handleCommandOutputsChange}
-            scheduledCommands={scheduledCommands}
             onPresetChange={handlePresetChange}
+            preset={group.preset}
+            showPresetHeader={true}
           />
-        )}
+        ))}
       </main>
 
       <footer className="app-footer">
         <div className="footer-info">
           <span className="target-count">
-            {targets.length} target{targets.length !== 1 ? "s" : ""} found
+            {totalTargets} target{totalTargets !== 1 ? "s" : ""} found
           </span>
           {healthInfo && (
             <span className="coordinator-status">

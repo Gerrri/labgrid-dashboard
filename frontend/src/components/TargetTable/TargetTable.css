@@ -2,6 +2,39 @@
 .target-table-container {
   width: 100%;
   overflow-x: auto;
+  margin-bottom: 2rem;
+}
+
+.target-table-container:last-child {
+  margin-bottom: 0;
+}
+
+/* Preset Table Header */
+.preset-table-header {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.preset-table-header .preset-name {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.preset-table-header .preset-target-count {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.preset-table-header .preset-description {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
 }
 
 .target-table {
