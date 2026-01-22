@@ -112,11 +112,6 @@ export function TargetTable({
       )}
       {sortedTargets.length > 0 && (
         <>
-          {loading && (
-            <div className="target-table-refreshing">
-              <span className="refresh-indicator">Refreshing...</span>
-            </div>
-          )}
           <table className="target-table">
             <thead>
               <tr>
