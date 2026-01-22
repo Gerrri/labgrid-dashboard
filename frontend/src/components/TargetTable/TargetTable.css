@@ -358,9 +358,8 @@
   font-family: monospace;
   font-size: 0.75rem;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 150px;
+  position: relative;
 }
 
 .scheduled-output {
@@ -369,6 +368,11 @@
   background-color: var(--color-code-bg);
   border-radius: 4px;
   cursor: default;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .scheduled-output.error {
@@ -380,6 +384,65 @@
   .scheduled-output.error {
     background-color: #991b1b;
     color: #fee2e2;
+  }
+}
+
+/* Scheduled Output Tooltip */
+.scheduled-output-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.scheduled-output-tooltip {
+  display: none;
+  position: fixed;
+  min-width: 200px;
+  max-width: 400px;
+  padding: 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.scheduled-output-wrapper:hover .scheduled-output-tooltip {
+  display: block;
+}
+
+.tooltip-command-name {
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tooltip-output {
+  font-family: monospace;
+  font-size: 0.8125rem;
+  color: var(--color-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--color-code-bg);
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tooltip-timestamp {
+  font-size: 0.6875rem;
+  color: var(--color-muted);
+  text-align: right;
+}
+
+@media (prefers-color-scheme: dark) {
+  .scheduled-output-tooltip {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 }
 
