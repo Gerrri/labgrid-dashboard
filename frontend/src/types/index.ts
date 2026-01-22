@@ -146,12 +146,21 @@ export interface WSTargetsListMessage extends WSMessage {
 }
 
 /**
- * Hardware preset definition
+ * Hardware preset definition (summary)
  */
 export interface Preset {
   id: string;
   name: string;
   description: string;
+}
+
+/**
+ * Hardware preset with full details including commands
+ */
+export interface PresetDetail extends Preset {
+  commands: Command[];
+  scheduled_commands: ScheduledCommand[];
+  auto_refresh_commands: string[];
 }
 
 /**

@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import type { Preset, PresetsResponse, Command } from "../../types";
+import type {
+  Preset,
+  PresetsResponse,
+  PresetDetail,
+  Command,
+} from "../../types";
 import { api } from "../../services/api";
 import "./TargetSettings.css";
 
@@ -19,10 +24,12 @@ export function TargetSettings({
   onClose,
 }: TargetSettingsProps) {
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [presetDetails, setPresetDetails] = useState<Map<string, PresetDetail>>(
+    new Map(),
+  );
   const [defaultPreset, setDefaultPreset] = useState<string>("");
   const [currentPresetId, setCurrentPresetId] = useState<string>("");
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
-  const [presetCommands, setPresetCommands] = useState<Command[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,9 +55,17 @@ export function TargetSettings({
         setCurrentPresetId(currentPreset);
         setSelectedPresetId(currentPreset);
 
-        // Fetch commands for the current preset
-        const commandsResponse = await api.getCommands(targetName);
-        setPresetCommands(commandsResponse.data);
+        // Fetch details for all presets (including commands)
+        const detailsPromises = presetsData.presets.map((p) =>
+          api.getPresetDetail(p.id),
+        );
+        const detailsResponses = await Promise.all(detailsPromises);
+
+        const detailsMap = new Map<string, PresetDetail>();
+        detailsResponses.forEach((response) => {
+          detailsMap.set(response.data.id, response.data);
+        });
+        setPresetDetails(detailsMap);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to load settings";
@@ -63,29 +78,6 @@ export function TargetSettings({
 
     fetchData();
   }, [targetName]);
-
-  // Fetch commands when selected preset changes (for preview)
-  useEffect(() => {
-    const fetchPresetCommands = async () => {
-      if (!selectedPresetId || selectedPresetId === currentPresetId) {
-        return;
-      }
-
-      try {
-        // We fetch the commands that would be available for this preset
-        // Note: The backend returns commands based on the current preset,
-        // so we show the preview based on the preset description
-        const selectedPreset = presets.find((p) => p.id === selectedPresetId);
-        if (selectedPreset) {
-          // Commands will be reloaded after saving
-        }
-      } catch (err) {
-        console.error("Error fetching preset commands:", err);
-      }
-    };
-
-    fetchPresetCommands();
-  }, [selectedPresetId, currentPresetId, presets]);
 
   const handlePresetSelect = useCallback((presetId: string) => {
     setSelectedPresetId(presetId);
@@ -133,13 +125,24 @@ export function TargetSettings({
     );
   }
 
-  const selectedPreset = presets.find((p) => p.id === selectedPresetId);
-
   return (
     <div className="target-settings">
       <div className="target-settings-header">
         <h4>
-          <span className="settings-icon">⚙️</span>
+          <svg
+            className="settings-icon"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
           Target Settings
         </h4>
       </div>
@@ -155,65 +158,49 @@ export function TargetSettings({
         <div className="preset-section">
           <h5>Hardware Preset:</h5>
           <div className="preset-list">
-            {presets.map((preset) => (
-              <label
-                key={preset.id}
-                className={`preset-option ${selectedPresetId === preset.id ? "selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="preset"
-                  value={preset.id}
-                  checked={selectedPresetId === preset.id}
-                  onChange={() => handlePresetSelect(preset.id)}
-                  disabled={saving}
-                />
-                <div className="preset-info">
-                  <span className="preset-name">
-                    {preset.name}
-                    {preset.id === defaultPreset && (
-                      <span className="default-badge">default</span>
+            {presets.map((preset) => {
+              const detail = presetDetails.get(preset.id);
+              const commands = detail?.commands || [];
+
+              return (
+                <label
+                  key={preset.id}
+                  className={`preset-option ${selectedPresetId === preset.id ? "selected" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="preset"
+                    value={preset.id}
+                    checked={selectedPresetId === preset.id}
+                    onChange={() => handlePresetSelect(preset.id)}
+                    disabled={saving}
+                  />
+                  <div className="preset-info">
+                    <span className="preset-name">
+                      {preset.name}
+                      {preset.id === defaultPreset && (
+                        <span className="default-badge">default</span>
+                      )}
+                      {preset.id === currentPresetId && (
+                        <span className="current-badge">current</span>
+                      )}
+                    </span>
+                    <span className="preset-description">
+                      {preset.description}
+                    </span>
+                    {commands.length > 0 && (
+                      <ul className="preset-commands-inline">
+                        {commands.map((cmd) => (
+                          <li key={cmd.name}>{cmd.name}</li>
+                        ))}
+                      </ul>
                     )}
-                    {preset.id === currentPresetId && (
-                      <span className="current-badge">current</span>
-                    )}
-                  </span>
-                  <span className="preset-description">
-                    {preset.description}
-                  </span>
-                </div>
-              </label>
-            ))}
+                  </div>
+                </label>
+              );
+            })}
           </div>
         </div>
-
-        {selectedPreset &&
-          selectedPresetId === currentPresetId &&
-          presetCommands.length > 0 && (
-            <div className="commands-preview">
-              <h5>Commands in this preset:</h5>
-              <ul className="commands-list">
-                {presetCommands.map((cmd) => (
-                  <li key={cmd.name}>
-                    <span className="command-name">{cmd.name}</span>
-                    <span className="command-description">
-                      - {cmd.description}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-        {selectedPreset && selectedPresetId !== currentPresetId && (
-          <div className="commands-preview pending">
-            <h5>After saving, commands will be reloaded for:</h5>
-            <p className="preset-change-info">
-              <strong>{selectedPreset.name}</strong> -{" "}
-              {selectedPreset.description}
-            </p>
-          </div>
-        )}
       </div>
 
       <div className="settings-actions">

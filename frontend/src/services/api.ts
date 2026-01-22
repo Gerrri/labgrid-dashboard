@@ -7,6 +7,7 @@ import type {
   HealthResponse,
   ScheduledCommandsResponse,
   PresetsResponse,
+  PresetDetail,
   TargetPresetResponse,
 } from "../types";
 
@@ -72,6 +73,14 @@ export const api = {
    * Get all available presets
    */
   getPresets: () => axiosInstance.get<PresetsResponse>("/api/presets"),
+
+  /**
+   * Get detailed information about a preset including its commands
+   */
+  getPresetDetail: (presetId: string) =>
+    axiosInstance.get<PresetDetail>(
+      `/api/presets/${encodeURIComponent(presetId)}`,
+    ),
 
   /**
    * Get the current preset for a target
