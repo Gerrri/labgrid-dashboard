@@ -4,9 +4,8 @@ Response models for API endpoints.
 
 from typing import List
 
+from app.models.target import Preset, PresetDetail, ScheduledCommand, Target
 from pydantic import BaseModel, Field
-
-from app.models.target import ScheduledCommand, Target
 
 
 class TargetListResponse(BaseModel):
@@ -19,7 +18,9 @@ class TargetListResponse(BaseModel):
 class ScheduledCommandsResponse(BaseModel):
     """Response model for list of scheduled commands."""
 
-    commands: List[ScheduledCommand] = Field(..., description="List of scheduled commands")
+    commands: List[ScheduledCommand] = Field(
+        ..., description="List of scheduled commands"
+    )
 
 
 class CommandExecutionRequest(BaseModel):
@@ -56,3 +57,24 @@ class WebSocketExecuteCommandMessage(BaseModel):
     type: str = Field(default="execute_command", description="Message type")
     target: str = Field(..., description="Target name to execute command on")
     command_name: str = Field(..., description="Name of the command to execute")
+
+
+class PresetsListResponse(BaseModel):
+    """Response model for list of available presets."""
+
+    presets: List[Preset] = Field(..., description="List of available presets")
+    default_preset: str = Field(..., description="Default preset ID")
+
+
+class TargetPresetResponse(BaseModel):
+    """Response model for a target's preset assignment."""
+
+    target_name: str = Field(..., description="Target name")
+    preset_id: str = Field(..., description="Assigned preset ID")
+    preset: Preset = Field(..., description="Preset details")
+
+
+class SetTargetPresetRequest(BaseModel):
+    """Request model for setting a target's preset."""
+
+    preset_id: str = Field(..., description="Preset ID to assign to the target")

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Commands configuration
     commands_file: str = "commands.yaml"
 
+    # Presets configuration (target-to-preset assignments)
+    presets_file: str = "target_presets.json"
+
     # Application settings
     app_name: str = "Labgrid Dashboard API"
     debug: bool = False

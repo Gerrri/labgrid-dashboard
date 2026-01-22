@@ -5,10 +5,10 @@ These tests verify the client behavior using pytest-mock for mocking
 the labgrid library dependencies.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
-
 from app.services.labgrid_client import LabgridClient, LabgridConnectionError
 
 
@@ -131,6 +131,21 @@ class TestLabgridClient:
 class TestLabgridClientWithMockedSession:
     """Test cases with mocked labgrid ClientSession."""
 
+    def _create_mock_resource_entry(self, cls_name, params, acquired, avail):
+        """Create a mock ResourceEntry object that mimics labgrid's structure."""
+        mock_entry = MagicMock()
+        mock_entry.cls = cls_name
+        mock_entry.params = params
+        mock_entry.acquired = acquired
+        mock_entry.avail = avail
+        mock_entry.data = {
+            "cls": cls_name,
+            "params": params,
+            "acquired": acquired,
+            "avail": avail,
+        }
+        return mock_entry
+
     @pytest_asyncio.fixture
     async def connected_client(self):
         """Create a connected client with mocked session."""
@@ -153,16 +168,16 @@ class TestLabgridClientWithMockedSession:
     @pytest.mark.asyncio
     async def test_get_places_with_resources(self, connected_client: LabgridClient):
         """Test getting places when resources are available."""
-        # Set up mock resources
-        connected_client._resources_cache = {
-            "exporter-1": {
-                "NetworkSerialPort": {
-                    "cls": "NetworkSerialPort",
-                    "params": {"host": "192.168.1.100", "port": 5000},
-                    "acquired": None,
-                    "avail": True,
-                }
-            }
+        # Set up mock resources in the session's resources dict
+        # Structure: session.resources[exporter][group][res_type] = ResourceEntry
+        mock_entry = self._create_mock_resource_entry(
+            cls_name="NetworkSerialPort",
+            params={"host": "192.168.1.100", "port": 5000},
+            acquired=None,
+            avail=True,
+        )
+        connected_client._session.resources = {
+            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
         }
 
         places = await connected_client.get_places()
@@ -176,15 +191,14 @@ class TestLabgridClientWithMockedSession:
         self, connected_client: LabgridClient
     ):
         """Test getting places with acquired resources."""
-        connected_client._resources_cache = {
-            "exporter-1": {
-                "NetworkSerialPort": {
-                    "cls": "NetworkSerialPort",
-                    "params": {"host": "192.168.1.100", "port": 5000},
-                    "acquired": "user@host",
-                    "avail": True,
-                }
-            }
+        mock_entry = self._create_mock_resource_entry(
+            cls_name="NetworkSerialPort",
+            params={"host": "192.168.1.100", "port": 5000},
+            acquired="user@host",
+            avail=True,
+        )
+        connected_client._session.resources = {
+            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
         }
 
         places = await connected_client.get_places()
@@ -198,15 +212,15 @@ class TestLabgridClientWithMockedSession:
         self, connected_client: LabgridClient
     ):
         """Test getting places with offline resources."""
-        connected_client._resources_cache = {
-            "exporter-1": {
-                "NetworkSerialPort": {
-                    "cls": "NetworkSerialPort",
-                    "params": {},
-                    "acquired": None,
-                    "avail": False,
-                }
-            }
+        # For offline resources, params might be empty and avail=False
+        mock_entry = self._create_mock_resource_entry(
+            cls_name="NetworkSerialPort",
+            params={},
+            acquired=None,
+            avail=False,
+        )
+        connected_client._session.resources = {
+            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
         }
 
         places = await connected_client.get_places()

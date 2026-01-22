@@ -70,7 +70,7 @@ class Command(BaseModel):
 
 
 class CommandsConfig(BaseModel):
-    """Configuration for available commands."""
+    """Configuration for available commands (legacy, kept for backwards compatibility)."""
 
     commands: List[Command] = Field(default_factory=list, description="List of available commands")
     auto_refresh_commands: List[str] = Field(
@@ -78,4 +78,51 @@ class CommandsConfig(BaseModel):
     )
     scheduled_commands: List[ScheduledCommand] = Field(
         default_factory=list, description="Commands that run periodically on all targets"
+    )
+
+
+class Preset(BaseModel):
+    """Represents a hardware preset (summary view)."""
+
+    id: str = Field(..., description="Unique preset identifier (used as key in YAML)")
+    name: str = Field(..., description="Human-readable preset name")
+    description: str = Field(default="", description="Description of the preset")
+
+
+class PresetDetail(BaseModel):
+    """Represents a hardware preset with full details including commands."""
+
+    id: str = Field(..., description="Unique preset identifier (used as key in YAML)")
+    name: str = Field(..., description="Human-readable preset name")
+    description: str = Field(default="", description="Description of the preset")
+    commands: List[Command] = Field(default_factory=list, description="Commands available in this preset")
+    scheduled_commands: List[ScheduledCommand] = Field(
+        default_factory=list, description="Scheduled commands for this preset"
+    )
+    auto_refresh_commands: List[str] = Field(
+        default_factory=list, description="Command names to auto-refresh"
+    )
+
+
+class PresetsConfig(BaseModel):
+    """Configuration for all presets (loaded from commands.yaml)."""
+
+    default_preset: str = Field(default="basic", description="Default preset ID for new targets")
+    presets: Dict[str, PresetDetail] = Field(
+        default_factory=dict, description="Dictionary of preset_id -> PresetDetail"
+    )
+
+
+class TargetPresetAssignment(BaseModel):
+    """Represents the preset assignment for a target."""
+
+    target_name: str = Field(..., description="Target name")
+    preset_id: str = Field(..., description="Assigned preset ID")
+
+
+class TargetPresetsFile(BaseModel):
+    """Structure of the target_presets.json file."""
+
+    assignments: Dict[str, str] = Field(
+        default_factory=dict, description="Dictionary of target_name -> preset_id"
     )
