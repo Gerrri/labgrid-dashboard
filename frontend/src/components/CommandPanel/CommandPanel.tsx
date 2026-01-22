@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Command, CommandOutput } from '../../types';
-import { api } from '../../services/api';
-import { CommandButton } from './CommandButton';
-import { OutputViewer } from './OutputViewer';
-import './CommandPanel.css';
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { Command, CommandOutput } from "../../types";
+import { api } from "../../services/api";
+import { CommandButton } from "./CommandButton";
+import { OutputViewer } from "./OutputViewer";
+import "./CommandPanel.css";
 
 interface CommandPanelProps {
   targetName: string;
@@ -11,6 +11,7 @@ interface CommandPanelProps {
   persistedOutputs?: CommandOutput[];
   onCommandComplete?: (output: CommandOutput) => void;
   onOutputsChange?: (outputs: CommandOutput[]) => void;
+  onSettingsClick?: () => void;
 }
 
 /**
@@ -23,16 +24,17 @@ export function CommandPanel({
   persistedOutputs,
   onCommandComplete,
   onOutputsChange,
+  onSettingsClick,
 }: CommandPanelProps) {
   const [commands, setCommands] = useState<Command[]>([]);
   // Use persisted outputs if available, otherwise fall back to initial outputs
   const [outputs, setOutputs] = useState<CommandOutput[]>(
-    persistedOutputs ?? initialOutputs
+    persistedOutputs ?? initialOutputs,
   );
   const [loadingCommands, setLoadingCommands] = useState(true);
   const [executingCommand, setExecutingCommand] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Track if this is the first mount to avoid overwriting persisted state
   const isFirstMount = useRef(true);
 
@@ -45,9 +47,10 @@ export function CommandPanel({
         const response = await api.getCommands(targetName);
         setCommands(response.data);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to load commands';
+        const message =
+          err instanceof Error ? err.message : "Failed to load commands";
         setError(message);
-        console.error('Error fetching commands:', err);
+        console.error("Error fetching commands:", err);
       } finally {
         setLoadingCommands(false);
       }
@@ -90,14 +93,15 @@ export function CommandPanel({
         onOutputsChange?.(newOutputs);
         onCommandComplete?.(newOutput);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Command execution failed';
+        const message =
+          err instanceof Error ? err.message : "Command execution failed";
         setError(message);
-        console.error('Error executing command:', err);
+        console.error("Error executing command:", err);
       } finally {
         setExecutingCommand(null);
       }
     },
-    [targetName, outputs, onCommandComplete, onOutputsChange]
+    [targetName, outputs, onCommandComplete, onOutputsChange],
   );
 
   const handleClearOutput = () => {
@@ -146,7 +150,9 @@ export function CommandPanel({
               command={command}
               onExecute={handleExecuteCommand}
               isExecuting={executingCommand === command.name}
-              disabled={executingCommand !== null && executingCommand !== command.name}
+              disabled={
+                executingCommand !== null && executingCommand !== command.name
+              }
             />
           ))
         ) : (
@@ -157,6 +163,17 @@ export function CommandPanel({
       <div className="command-output-section">
         <OutputViewer outputs={outputs} />
       </div>
+
+      {onSettingsClick && (
+        <button
+          className="btn-settings"
+          onClick={onSettingsClick}
+          title="Target Settings"
+          aria-label="Open target settings"
+        >
+          ⚙️
+        </button>
+      )}
     </div>
   );
 }

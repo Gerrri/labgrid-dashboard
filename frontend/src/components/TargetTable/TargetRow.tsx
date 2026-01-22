@@ -1,6 +1,8 @@
-import type { Target, CommandOutput, ScheduledCommand } from '../../types';
-import { StatusBadge } from './StatusBadge';
-import { CommandPanel } from '../CommandPanel';
+import { useState, useCallback } from "react";
+import type { Target, CommandOutput, ScheduledCommand } from "../../types";
+import { StatusBadge } from "./StatusBadge";
+import { CommandPanel } from "../CommandPanel";
+import { TargetSettings } from "../TargetSettings";
 
 interface TargetRowProps {
   target: Target;
@@ -8,9 +10,13 @@ interface TargetRowProps {
   onToggleExpand: (targetName: string) => void;
   onCommandComplete?: (targetName: string, output: CommandOutput) => void;
   commandOutputs?: CommandOutput[];
-  onCommandOutputsChange?: (targetName: string, outputs: CommandOutput[]) => void;
+  onCommandOutputsChange?: (
+    targetName: string,
+    outputs: CommandOutput[],
+  ) => void;
   scheduledCommands?: ScheduledCommand[];
   totalColumns?: number;
+  onPresetChange?: (targetName: string, presetId: string) => void;
 }
 
 /**
@@ -26,10 +32,35 @@ export function TargetRow({
   onCommandOutputsChange,
   scheduledCommands = [],
   totalColumns = 5,
+  onPresetChange,
 }: TargetRowProps) {
+  const [showSettings, setShowSettings] = useState(false);
+  const [resourcesExpanded, setResourcesExpanded] = useState(false);
+
   const toggleExpand = () => {
     onToggleExpand(target.name);
+    // Reset settings view when collapsing
+    if (expanded) {
+      setShowSettings(false);
+    }
   };
+
+  const handleSettingsClick = useCallback(() => {
+    setShowSettings(true);
+  }, []);
+
+  const handleSettingsClose = useCallback(() => {
+    setShowSettings(false);
+  }, []);
+
+  const handlePresetChange = useCallback(
+    (presetId: string) => {
+      onPresetChange?.(target.name, presetId);
+      // Reset settings view after preset change
+      setShowSettings(false);
+    },
+    [target.name, onPresetChange],
+  );
 
   const handleCommandComplete = (output: CommandOutput) => {
     onCommandComplete?.(target.name, output);
@@ -72,7 +103,7 @@ export function TargetRow({
     const isError = output.exit_code !== 0;
     return (
       <span
-        className={`scheduled-output ${isError ? 'error' : ''}`}
+        className={`scheduled-output ${isError ? "error" : ""}`}
         title={`Last updated: ${new Date(output.timestamp).toLocaleString()}`}
       >
         {output.output}
@@ -80,11 +111,11 @@ export function TargetRow({
     );
   };
 
-  const canExecuteCommands = target.status !== 'offline';
+  const canExecuteCommands = target.status !== "offline";
 
   return (
     <>
-      <tr className={`target-row ${expanded ? 'expanded' : ''}`}>
+      <tr className={`target-row ${expanded ? "expanded" : ""}`}>
         <td className="target-name">{target.name}</td>
         <td className="target-status">
           <StatusBadge status={target.status} />
@@ -103,9 +134,9 @@ export function TargetRow({
             className="btn-expand"
             onClick={toggleExpand}
             aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse details' : 'Expand details'}
+            aria-label={expanded ? "Collapse details" : "Expand details"}
           >
-            {expanded ? '▼' : '▶'}
+            {expanded ? "▼" : "▶"}
           </button>
         </td>
       </tr>
@@ -113,45 +144,76 @@ export function TargetRow({
         <tr className="target-details-row">
           <td colSpan={totalColumns}>
             <div className="target-details">
-              {/* Resources Section */}
-              <div className="details-section">
-                <h4>Resources ({target.resources.length})</h4>
-                {target.resources.length > 0 ? (
-                  <ul className="resources-list">
-                    {target.resources.map((resource, index) => (
-                      <li key={index} className="resource-item">
-                        <strong>{resource.type}</strong>
-                        {Object.keys(resource.params).length > 0 && (
-                          <pre className="resource-params">
-                            {JSON.stringify(resource.params, null, 2)}
-                          </pre>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-muted">No resources available</p>
-                )}
-              </div>
-
-              {/* Command Panel Section */}
-              <div className="details-section">
-                {canExecuteCommands ? (
-                  <CommandPanel
+              {showSettings ? (
+                /* Full-width Target Settings when open */
+                <div className="details-section full-width">
+                  <TargetSettings
                     targetName={target.name}
-                    initialOutputs={target.last_command_outputs}
-                    persistedOutputs={commandOutputs}
-                    onCommandComplete={handleCommandComplete}
-                    onOutputsChange={handleOutputsChange}
+                    onPresetChange={handlePresetChange}
+                    onClose={handleSettingsClose}
                   />
-                ) : (
-                  <div className="commands-offline">
-                    <p className="text-muted">
-                      Commands unavailable - target is offline
-                    </p>
+                </div>
+              ) : (
+                <>
+                  {/* Resources Section - Collapsible */}
+                  <div className="details-section collapsible">
+                    <button
+                      className="section-toggle"
+                      onClick={() => setResourcesExpanded(!resourcesExpanded)}
+                      aria-expanded={resourcesExpanded}
+                    >
+                      <span className="toggle-icon">
+                        {resourcesExpanded ? "▼" : "▶"}
+                      </span>
+                      <h4>
+                        Connection Type
+                        {target.resources.length > 0 && (
+                          <span className="resource-type-hint">
+                            {target.resources.map((r) => r.type).join(", ")}
+                          </span>
+                        )}
+                      </h4>
+                    </button>
+                    {resourcesExpanded && target.resources.length > 0 && (
+                      <ul className="resources-list">
+                        {target.resources.map((resource, index) => (
+                          <li key={index} className="resource-item">
+                            <strong>{resource.type}</strong>
+                            {Object.keys(resource.params).length > 0 && (
+                              <pre className="resource-params">
+                                {JSON.stringify(resource.params, null, 2)}
+                              </pre>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {resourcesExpanded && target.resources.length === 0 && (
+                      <p className="text-muted">No resources available</p>
+                    )}
                   </div>
-                )}
-              </div>
+
+                  {/* Command Panel Section */}
+                  <div className="details-section">
+                    {canExecuteCommands ? (
+                      <CommandPanel
+                        targetName={target.name}
+                        initialOutputs={target.last_command_outputs}
+                        persistedOutputs={commandOutputs}
+                        onCommandComplete={handleCommandComplete}
+                        onOutputsChange={handleOutputsChange}
+                        onSettingsClick={handleSettingsClick}
+                      />
+                    ) : (
+                      <div className="commands-offline">
+                        <p className="text-muted">
+                          Commands unavailable - target is offline
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </td>
         </tr>

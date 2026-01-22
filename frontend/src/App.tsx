@@ -1,16 +1,21 @@
-import { useState, useCallback, useEffect } from 'react';
-import { TargetTable } from './components/TargetTable';
-import { useTargets } from './hooks/useTargets';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useState, useCallback, useEffect } from "react";
+import { TargetTable } from "./components/TargetTable";
+import { useTargets } from "./hooks/useTargets";
+import { useWebSocket } from "./hooks/useWebSocket";
 import {
   LoadingSpinner,
   ErrorMessage,
   ConnectionStatus,
   RefreshControl,
-} from './components/common';
-import { api } from './services/api';
-import type { Target, CommandOutput, HealthResponse, ScheduledCommand } from './types';
-import './App.css';
+} from "./components/common";
+import { api } from "./services/api";
+import type {
+  Target,
+  CommandOutput,
+  HealthResponse,
+  ScheduledCommand,
+} from "./types";
+import "./App.css";
 
 const AUTO_REFRESH_INTERVAL = 30; // seconds
 
@@ -22,12 +27,14 @@ function App() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const [scheduledCommands, setScheduledCommands] = useState<ScheduledCommand[]>([]);
-  
+  const [scheduledCommands, setScheduledCommands] = useState<
+    ScheduledCommand[]
+  >([]);
+
   // Store command outputs at App level to preserve across refreshes
-  const [commandOutputs, setCommandOutputs] = useState<Map<string, CommandOutput[]>>(
-    new Map()
-  );
+  const [commandOutputs, setCommandOutputs] = useState<
+    Map<string, CommandOutput[]>
+  >(new Map());
 
   // Fetch health info and scheduled commands on mount
   useEffect(() => {
@@ -36,19 +43,19 @@ function App() {
         const response = await api.getHealth();
         setHealthInfo(response.data);
       } catch (err) {
-        console.error('Failed to fetch health info:', err);
+        console.error("Failed to fetch health info:", err);
       }
     };
-    
+
     const fetchScheduledCommands = async () => {
       try {
         const response = await api.getScheduledCommands();
         setScheduledCommands(response.data.commands);
       } catch (err) {
-        console.error('Failed to fetch scheduled commands:', err);
+        console.error("Failed to fetch scheduled commands:", err);
       }
     };
-    
+
     fetchHealth();
     fetchScheduledCommands();
   }, []);
@@ -62,12 +69,12 @@ function App() {
 
   const handleTargetUpdate = useCallback(
     (updatedTarget: Target) => {
-      console.log('Target updated via WebSocket:', updatedTarget.name);
+      console.log("Target updated via WebSocket:", updatedTarget.name);
       // Refetch to get the latest data
       refetch();
       setLastUpdated(new Date());
     },
-    [refetch]
+    [refetch],
   );
 
   const handleCommandOutput = useCallback(
@@ -76,22 +83,22 @@ function App() {
       refetch();
       setLastUpdated(new Date());
     },
-    [refetch]
+    [refetch],
   );
 
   const handleTargetsList = useCallback(
     (targetsList: Target[]) => {
-      console.log('Received targets list via WebSocket:', targetsList.length);
+      console.log("Received targets list via WebSocket:", targetsList.length);
       refetch();
       setLastUpdated(new Date());
     },
-    [refetch]
+    [refetch],
   );
 
   const handleConnectionChange = useCallback((connected: boolean) => {
     console.log(
-      'WebSocket connection:',
-      connected ? 'connected' : 'disconnected'
+      "WebSocket connection:",
+      connected ? "connected" : "disconnected",
     );
     setIsReconnecting(!connected);
   }, []);
@@ -121,7 +128,7 @@ function App() {
       // The TargetRow already handles updating its local state
       // We can optionally refetch to sync with server
     },
-    []
+    [],
   );
 
   // Handler to update command outputs for a specific target
@@ -133,7 +140,23 @@ function App() {
         return newMap;
       });
     },
-    []
+    [],
+  );
+
+  // Handler for preset changes - clear outputs and refetch to reload commands
+  const handlePresetChange = useCallback(
+    (targetName: string, presetId: string) => {
+      console.log(`Preset changed for ${targetName} to ${presetId}`);
+      // Clear command outputs for this target since commands might have changed
+      setCommandOutputs((prev) => {
+        const newMap = new Map(prev);
+        newMap.delete(targetName);
+        return newMap;
+      });
+      // Refetch targets to ensure data is up to date
+      refetch();
+    },
+    [refetch],
   );
 
   return (
@@ -186,6 +209,7 @@ function App() {
             commandOutputs={commandOutputs}
             onCommandOutputsChange={handleCommandOutputsChange}
             scheduledCommands={scheduledCommands}
+            onPresetChange={handlePresetChange}
           />
         )}
       </main>
@@ -193,11 +217,11 @@ function App() {
       <footer className="app-footer">
         <div className="footer-info">
           <span className="target-count">
-            {targets.length} target{targets.length !== 1 ? 's' : ''} found
+            {targets.length} target{targets.length !== 1 ? "s" : ""} found
           </span>
           {healthInfo && (
             <span className="coordinator-status">
-              Coordinator:{' '}
+              Coordinator:{" "}
               {healthInfo.coordinator_connected ? (
                 <span className="status-ok">Connected</span>
               ) : (

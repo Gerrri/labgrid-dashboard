@@ -1,15 +1,19 @@
-import { useState, useCallback, useMemo } from 'react';
-import type { Target, CommandOutput, ScheduledCommand } from '../../types';
-import { TargetRow } from './TargetRow';
-import './TargetTable.css';
+import { useState, useCallback, useMemo } from "react";
+import type { Target, CommandOutput, ScheduledCommand } from "../../types";
+import { TargetRow } from "./TargetRow";
+import "./TargetTable.css";
 
 interface TargetTableProps {
   targets: Target[];
   loading?: boolean;
   onCommandComplete?: (targetName: string, output: CommandOutput) => void;
   commandOutputs?: Map<string, CommandOutput[]>;
-  onCommandOutputsChange?: (targetName: string, outputs: CommandOutput[]) => void;
+  onCommandOutputsChange?: (
+    targetName: string,
+    outputs: CommandOutput[],
+  ) => void;
   scheduledCommands?: ScheduledCommand[];
+  onPresetChange?: (targetName: string, presetId: string) => void;
 }
 
 /**
@@ -23,9 +27,12 @@ export function TargetTable({
   commandOutputs,
   onCommandOutputsChange,
   scheduledCommands = [],
+  onPresetChange,
 }: TargetTableProps) {
   // Manage expanded state at table level to preserve across refreshes
-  const [expandedTargets, setExpandedTargets] = useState<Set<string>>(new Set());
+  const [expandedTargets, setExpandedTargets] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Sort targets alphabetically by name for consistent display
   const sortedTargets = useMemo(() => {
@@ -80,7 +87,11 @@ export function TargetTable({
                 <th>Acquired By</th>
                 <th>IP Address</th>
                 {scheduledCommands.map((cmd) => (
-                  <th key={cmd.name} className="scheduled-column" title={cmd.description}>
+                  <th
+                    key={cmd.name}
+                    className="scheduled-column"
+                    title={cmd.description}
+                  >
                     {cmd.name}
                   </th>
                 ))}
@@ -99,6 +110,7 @@ export function TargetTable({
                   onCommandOutputsChange={onCommandOutputsChange}
                   scheduledCommands={scheduledCommands}
                   totalColumns={totalColumns}
+                  onPresetChange={onPresetChange}
                 />
               ))}
             </tbody>

@@ -39,7 +39,7 @@ export interface ScheduledCommand {
 /**
  * Target/DUT status
  */
-export type TargetStatus = 'available' | 'acquired' | 'offline';
+export type TargetStatus = "available" | "acquired" | "offline";
 
 /**
  * Target/DUT representation
@@ -91,12 +91,12 @@ export interface HealthResponse {
  * WebSocket message types
  */
 export type WSMessageType =
-  | 'target_update'
-  | 'command_output'
-  | 'scheduled_output'
-  | 'targets_list'
-  | 'subscribe'
-  | 'execute_command';
+  | "target_update"
+  | "command_output"
+  | "scheduled_output"
+  | "targets_list"
+  | "subscribe"
+  | "execute_command";
 
 /**
  * WebSocket message structure
@@ -110,7 +110,7 @@ export interface WSMessage {
  * WebSocket target update message
  */
 export interface WSTargetUpdateMessage extends WSMessage {
-  type: 'target_update';
+  type: "target_update";
   data: Target;
 }
 
@@ -118,7 +118,7 @@ export interface WSTargetUpdateMessage extends WSMessage {
  * WebSocket command output message
  */
 export interface WSCommandOutputMessage extends WSMessage {
-  type: 'command_output';
+  type: "command_output";
   data: {
     target_name: string;
     output: CommandOutput;
@@ -129,7 +129,7 @@ export interface WSCommandOutputMessage extends WSMessage {
  * WebSocket scheduled output message
  */
 export interface WSScheduledOutputMessage extends WSMessage {
-  type: 'scheduled_output';
+  type: "scheduled_output";
   data: {
     command_name: string;
     target: string;
@@ -141,6 +141,32 @@ export interface WSScheduledOutputMessage extends WSMessage {
  * WebSocket targets list message
  */
 export interface WSTargetsListMessage extends WSMessage {
-  type: 'targets_list';
+  type: "targets_list";
   data: Target[];
+}
+
+/**
+ * Hardware preset definition
+ */
+export interface Preset {
+  id: string;
+  name: string;
+  description: string;
+}
+
+/**
+ * API response for presets list
+ */
+export interface PresetsResponse {
+  presets: Preset[];
+  default_preset: string;
+}
+
+/**
+ * API response for target preset
+ */
+export interface TargetPresetResponse {
+  target_name: string;
+  preset_id: string;
+  preset: Preset;
 }
