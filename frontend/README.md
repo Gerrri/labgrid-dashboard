@@ -1,73 +1,123 @@
-# React + TypeScript + Vite
+# Labgrid Dashboard Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React-based frontend for the Labgrid Dashboard, built with TypeScript and Vite.
 
-Currently, two official plugins are available:
+## Technology Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **React 19** - UI Framework
+- **TypeScript** - Type safety
+- **Vite 7** - Build tool and dev server
+- **Vitest** - Testing framework
 
-## React Compiler
+## Development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+# Install dependencies
+npm install
 
-## Expanding the ESLint configuration
+# Start development server
+npm run dev
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# Build for production
+npm run build
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# Run linting
+npm run lint
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Run tests
+npm test
+npm run test:ui       # With Vitest UI
+npm run test:coverage # With coverage report
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Project Structure
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+src/
+├── components/
+│   ├── CommandPanel/      # Command execution UI
+│   │   ├── CommandButton.tsx
+│   │   ├── CommandPanel.tsx
+│   │   ├── OutputViewer.tsx
+│   │   └── CommandPanel.css
+│   ├── TargetTable/       # Target list display
+│   │   ├── TargetTable.tsx    # Main table component
+│   │   ├── TargetRow.tsx      # Individual target row
+│   │   ├── StatusBadge.tsx    # Status indicator
+│   │   └── TargetTable.css
+│   ├── TargetSettings/    # Preset configuration UI
+│   │   ├── TargetSettings.tsx
+│   │   └── TargetSettings.css
+│   └── common/            # Shared components
+│       ├── ConnectionStatus.tsx
+│       ├── ErrorMessage.tsx
+│       ├── LoadingSpinner.tsx
+│       └── RefreshControl.tsx
+├── hooks/
+│   ├── useTargets.ts           # Target data fetching
+│   ├── usePresetsWithTargets.ts # Grouped preset/target data
+│   └── useWebSocket.ts         # Real-time updates
+├── services/
+│   └── api.ts             # API client for backend communication
+├── types/
+│   └── index.ts           # TypeScript type definitions
+├── __tests__/             # Test files
+├── App.tsx                # Main application component
+└── main.tsx               # Application entry point
+```
+
+## Key Features
+
+### Hardware Presets
+Targets are grouped by their assigned preset in the UI:
+- Each preset group has its own table section
+- Preset-specific scheduled commands shown as columns
+- Empty preset groups are automatically hidden
+
+### Settings Panel
+Click the ⚙️ icon in an expanded target to:
+- View available presets
+- See commands included in each preset
+- Change the target's preset assignment
+
+### Real-time Updates
+WebSocket connection provides live status updates without manual refresh.
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and configure:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VITE_API_URL` | Backend API URL | `http://localhost:8000` |
+| `VITE_WS_URL` | Backend WebSocket URL | `ws://localhost:8000/api/ws` |
+
+## API Integration
+
+The frontend communicates with the backend via:
+
+- **REST API** - Target data, commands, presets
+- **WebSocket** - Real-time status updates
+
+Key API methods in `services/api.ts`:
+- `getTargets()` - Fetch all targets
+- `getPresets()` - List available presets
+- `getPresetDetail(id)` - Get preset commands
+- `getTargetPreset(name)` - Get target's current preset
+- `setTargetPreset(name, presetId)` - Assign preset to target
+- `executeCommand(name, command)` - Run command on target
+
+## Testing
+
+```bash
+# Run all tests
+npm test
+
+# Run with UI
+npm run test:ui
+
+# Generate coverage report
+npm run test:coverage
+```
+
+Tests are located in `src/__tests__/` and use Vitest with React Testing Library.

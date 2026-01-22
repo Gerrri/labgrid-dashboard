@@ -21,6 +21,8 @@ Labgrid Dashboard provides a real-time web interface to:
 - **Track ownership** - Know who currently has acquired each exporter/target
 - **Quick access** - Click on IP addresses to directly access device web interfaces
 - **Execute commands** - Run predefined commands on DUTs and view their outputs
+- **Hardware Presets** - Assign hardware-specific command sets to different targets
+- **Grouped Display** - Targets are automatically grouped by their preset type
 - **Real-time updates** - WebSocket-based live status updates without manual refresh
 
 > 📖 For a quick introduction, see the [Quick Start Guide](quick-start.md).
@@ -155,32 +157,63 @@ npm run test:coverage # Run with coverage report
 
 ## Configuration
 
-### Backend Commands (`backend/commands.yaml`)
+### Hardware Presets (`backend/commands.yaml`)
 
-Define custom commands that can be executed on targets:
+The dashboard uses a **preset system** to define hardware-specific command sets. Targets are grouped by their assigned preset in the UI, with each preset having its own scheduled command columns.
 
 ```yaml
-commands:
-  - name: "Linux Version"
-    command: "cat /etc/os-release"
-    description: "Shows the Linux distribution"
+# Default preset for new targets
+default_preset: basic
 
-  - name: "System Time"
-    command: "date"
-    description: "Current system time"
+# Preset definitions
+presets:
+  basic:
+    name: "Basic"
+    description: "Standard Linux Commands"
+    commands:
+      - name: "Linux Version"
+        command: "cat /etc/os-release"
+        description: "Shows the Linux distribution"
+      # ... more commands
 
-  - name: "Kernel Version"
-    command: "uname -a"
-    description: "Kernel and system info"
+    # Commands that auto-refresh when a target is expanded
+    auto_refresh_commands:
+      - "Linux Version"
+      - "System Time"
 
-  # ... more commands
+    # Commands shown as table columns (run periodically)
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 60
+      - name: "Load"
+        command: "cat /proc/loadavg | cut -d' ' -f1-3"
+        interval_seconds: 30
 
-# Commands that auto-refresh when a target is viewed
-auto_refresh_commands:
-  - "Linux Version"
-  - "System Time"
-  - "Uptime"
+  hardware1:
+    name: "Hardware 1"
+    description: "Commands for specialized hardware"
+    commands:
+      - name: "Temperature"
+        command: "cat /sys/class/thermal/thermal_zone0/temp"
+        description: "CPU Temperature"
+      # ... hardware-specific commands
+
+    scheduled_commands:
+      - name: "Temperature"
+        command: "cat /sys/class/thermal/thermal_zone0/temp"
+        interval_seconds: 30
 ```
+
+**Preset Assignment:**
+- Targets are assigned to presets via the Settings icon (⚙️) in the expanded target view
+- Assignments are stored in `target_presets.json`
+- Unassigned targets use the `default_preset`
+
+**Grouped Display:**
+- Targets are automatically grouped by preset in the dashboard
+- Each group shows preset-specific scheduled command columns
+- Empty preset groups are hidden
 
 ### Environment Variables
 
@@ -231,6 +264,10 @@ When backend is running, visit:
 | `/api/targets/{name}` | GET | Get specific target details |
 | `/api/targets/{name}/commands` | GET | Get available commands for target |
 | `/api/targets/{name}/command` | POST | Execute command on target |
+| `/api/presets` | GET | List all available presets |
+| `/api/presets/{preset_id}` | GET | Get preset details with commands |
+| `/api/targets/{name}/preset` | GET | Get current preset for a target |
+| `/api/targets/{name}/preset` | PUT | Assign preset to a target |
 | `/api/ws` | WebSocket | Real-time updates |
 
 ## Architecture
@@ -244,25 +281,34 @@ labgrid-dashboard/
 ├── backend/                 # FastAPI backend
 │   ├── app/
 │   │   ├── api/            # API routes and WebSocket handlers
-│   │   │   └── routes/     # Route definitions (health, targets)
-│   │   ├── models/         # Pydantic models
-│   │   └── services/       # Business logic (Labgrid client, commands)
+│   │   │   └── routes/     # Route definitions (health, targets, presets)
+│   │   ├── models/         # Pydantic models (Target, Preset, Response)
+│   │   └── services/       # Business logic
+│   │       ├── labgrid_client.py   # Labgrid Coordinator communication
+│   │       ├── command_service.py  # Command execution
+│   │       ├── preset_service.py   # Preset management
+│   │       └── scheduler_service.py # Scheduled command execution
 │   ├── tests/              # Backend tests
-│   └── commands.yaml       # Predefined commands configuration
+│   ├── commands.yaml       # Preset and command definitions
+│   └── target_presets.json # Target-to-preset assignments (auto-generated)
 ├── frontend/               # React frontend
 │   ├── src/
 │   │   ├── components/     # React components
-│   │   │   ├── CommandPanel/   # Command execution UI
-│   │   │   ├── TargetTable/    # Target list display
-│   │   │   └── common/         # Shared components
+│   │   │   ├── CommandPanel/     # Command execution UI
+│   │   │   ├── TargetTable/      # Target list display (grouped by preset)
+│   │   │   ├── TargetSettings/   # Preset selection UI
+│   │   │   └── common/           # Shared components
 │   │   ├── hooks/          # Custom React hooks
+│   │   │   ├── useTargets.ts           # Target data fetching
+│   │   │   ├── usePresetsWithTargets.ts # Grouped preset/target data
+│   │   │   └── useWebSocket.ts         # Real-time updates
 │   │   ├── services/       # API client
 │   │   ├── types/          # TypeScript types
 │   │   └── __tests__/      # Frontend tests
 │   ├── .env.example        # Frontend environment template
 │   └── vitest.config.ts    # Test configuration
 ├── docker/                 # Docker configurations
-│   ├── coordinator/        # Labgrid Coordinator (Crossbar.io)
+│   ├── coordinator/        # Labgrid Coordinator
 │   ├── dut/                # Simulated DUT containers (Alpine Linux)
 │   ├── exporter/           # Labgrid Exporter configuration
 │   └── init-acquire/       # Auto-acquire initialization script
