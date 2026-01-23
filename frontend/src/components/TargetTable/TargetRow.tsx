@@ -66,7 +66,6 @@ export function TargetRow({
   onPresetChange,
 }: TargetRowProps) {
   const [showSettings, setShowSettings] = useState(false);
-  const [resourcesExpanded, setResourcesExpanded] = useState(false);
   const [tooltipState, setTooltipState] = useState<TooltipState | null>(null);
 
   const toggleExpand = () => {
@@ -242,65 +241,25 @@ export function TargetRow({
                   />
                 </div>
               ) : (
-                <>
-                  {/* Resources Section - Collapsible */}
-                  <div className="details-section collapsible">
-                    <button
-                      className="section-toggle"
-                      onClick={() => setResourcesExpanded(!resourcesExpanded)}
-                      aria-expanded={resourcesExpanded}
-                    >
-                      <span className="toggle-icon">
-                        {resourcesExpanded ? "▼" : "▶"}
-                      </span>
-                      <h4>
-                        Connection Type
-                        {target.resources.length > 0 && (
-                          <span className="resource-type-hint">
-                            {target.resources.map((r) => r.type).join(", ")}
-                          </span>
-                        )}
-                      </h4>
-                    </button>
-                    {resourcesExpanded && target.resources.length > 0 && (
-                      <ul className="resources-list">
-                        {target.resources.map((resource, index) => (
-                          <li key={index} className="resource-item">
-                            <strong>{resource.type}</strong>
-                            {Object.keys(resource.params).length > 0 && (
-                              <pre className="resource-params">
-                                {JSON.stringify(resource.params, null, 2)}
-                              </pre>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {resourcesExpanded && target.resources.length === 0 && (
-                      <p className="text-muted">No resources available</p>
-                    )}
-                  </div>
-
-                  {/* Command Panel Section */}
-                  <div className="details-section">
-                    {canExecuteCommands ? (
-                      <CommandPanel
-                        targetName={target.name}
-                        initialOutputs={target.last_command_outputs}
-                        persistedOutputs={commandOutputs}
-                        onCommandComplete={handleCommandComplete}
-                        onOutputsChange={handleOutputsChange}
-                        onSettingsClick={handleSettingsClick}
-                      />
-                    ) : (
-                      <div className="commands-offline">
-                        <p className="text-muted">
-                          Commands unavailable - target is offline
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </>
+                /* Command Panel Section */
+                <div className="details-section">
+                  {canExecuteCommands ? (
+                    <CommandPanel
+                      targetName={target.name}
+                      initialOutputs={target.last_command_outputs}
+                      persistedOutputs={commandOutputs}
+                      onCommandComplete={handleCommandComplete}
+                      onOutputsChange={handleOutputsChange}
+                      onSettingsClick={handleSettingsClick}
+                    />
+                  ) : (
+                    <div className="commands-offline">
+                      <p className="text-muted">
+                        Commands unavailable - target is offline
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </td>
