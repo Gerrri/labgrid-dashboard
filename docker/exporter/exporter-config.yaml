@@ -3,3 +3,7 @@ __EXPORTER_NAME__:
     host: "__DUT_HOST__"
     port: __DUT_PORT__
     speed: 115200
+  NetworkService:
+    address: "__DUT_HOST__"
+    username: "root"
+    password: "labgrid"

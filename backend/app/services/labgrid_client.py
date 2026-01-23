@@ -10,9 +10,11 @@ Note: Labgrid switched from WAMP to gRPC in version 24.0.
 
 import asyncio
 import logging
+import os
 import socket
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.config import LABGRID_DASHBOARD_USER
 from app.models.target import CommandOutput, Resource, Target
 
 logger = logging.getLogger(__name__)
@@ -20,11 +22,25 @@ logger = logging.getLogger(__name__)
 # Constants for command execution
 COMMAND_TIMEOUT = 30  # seconds
 
+# Constants for release retry logic
+RELEASE_MAX_RETRIES = 3
+RELEASE_INITIAL_DELAY = 1.0  # seconds
+RELEASE_BACKOFF_FACTOR = 2.0
+
 
 class LabgridConnectionError(Exception):
     """Raised when connection to Labgrid Coordinator fails."""
 
     pass
+
+
+class TargetAcquiredByOtherError(Exception):
+    """Raised when target is acquired by another user."""
+
+    def __init__(self, target_name: str, acquired_by: str):
+        self.target_name = target_name
+        self.acquired_by = acquired_by
+        super().__init__(f"Target '{target_name}' is acquired by '{acquired_by}'")
 
 
 class LabgridClient:
@@ -442,8 +458,172 @@ class LabgridClient:
         )
         return True
 
+    async def _get_acquired_by(self, place_name: str) -> Optional[str]:
+        """Get the user who has acquired a target.
+
+        Args:
+            place_name: The place name to check.
+
+        Returns:
+            The username who acquired the target, or None if not acquired.
+        """
+        await self._refresh_cache()
+        if place_name in self._resources_cache:
+            for res_type, res_data in self._resources_cache[place_name].items():
+                acquired = res_data.get("acquired")
+                if acquired:
+                    return acquired
+        return None
+
+    async def acquire_target(self, place_name: str) -> bool:
+        """Acquire a target for command execution.
+
+        Args:
+            place_name: The place name to acquire.
+
+        Returns:
+            True if successfully acquired.
+
+        Raises:
+            TargetAcquiredByOtherError: If target is acquired by another user.
+            RuntimeError: If acquisition fails for other reasons.
+        """
+        # Check current state first
+        current_owner = await self._get_acquired_by(place_name)
+        if current_owner and current_owner != LABGRID_DASHBOARD_USER:
+            raise TargetAcquiredByOtherError(place_name, current_owner)
+
+        if current_owner == LABGRID_DASHBOARD_USER:
+            logger.debug(f"Target '{place_name}' already acquired by us")
+            return True  # Already acquired by us
+
+        logger.info(f"Acquiring target '{place_name}' as '{LABGRID_DASHBOARD_USER}'")
+        proc = await asyncio.create_subprocess_exec(
+            "labgrid-client",
+            "-p",
+            place_name,
+            "-x",
+            self._url,
+            "acquire",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "LG_USERNAME": LABGRID_DASHBOARD_USER},
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace")
+            if "already acquired" in error.lower():
+                # Parse who acquired it from error message
+                # Error format: "place X is already acquired by Y"
+                acquired_by = self._parse_acquired_by_from_error(error)
+                raise TargetAcquiredByOtherError(place_name, acquired_by)
+            raise RuntimeError(f"Failed to acquire target: {error}")
+
+        logger.info(f"Successfully acquired target '{place_name}'")
+        return True
+
+    def _parse_acquired_by_from_error(self, error: str) -> str:
+        """Parse the username from an 'already acquired' error message.
+
+        Args:
+            error: The error message from labgrid-client.
+
+        Returns:
+            The username who acquired the target, or 'unknown' if parsing fails.
+        """
+        # Try to parse "place X is already acquired by Y"
+        try:
+            if "acquired by" in error.lower():
+                parts = error.lower().split("acquired by")
+                if len(parts) > 1:
+                    return parts[1].strip().split()[0]
+        except Exception:
+            pass
+        return "unknown"
+
+    async def release_target(self, place_name: str) -> bool:
+        """Release a previously acquired target.
+
+        Args:
+            place_name: The place name to release.
+
+        Returns:
+            True if successfully released, False otherwise.
+        """
+        logger.info(f"Releasing target '{place_name}'")
+        proc = await asyncio.create_subprocess_exec(
+            "labgrid-client",
+            "-p",
+            place_name,
+            "-x",
+            self._url,
+            "release",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "LG_USERNAME": LABGRID_DASHBOARD_USER},
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace")
+            logger.warning(f"Failed to release target '{place_name}': {error}")
+            return False
+
+        logger.info(f"Successfully released target '{place_name}'")
+        return True
+
+    async def release_target_with_retry(
+        self,
+        place_name: str,
+        max_retries: int = RELEASE_MAX_RETRIES,
+    ) -> bool:
+        """Release a target with retry logic to prevent permanent locks.
+
+        Uses exponential backoff: 1s, 2s, 4s
+
+        Args:
+            place_name: The place name to release.
+            max_retries: Maximum number of retry attempts.
+
+        Returns:
+            True if successfully released, False if all retries failed.
+        """
+        delay = RELEASE_INITIAL_DELAY
+        last_error: Optional[Exception] = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                success = await self.release_target(place_name)
+                if success:
+                    if attempt > 0:
+                        logger.info(
+                            f"Released '{place_name}' after {attempt + 1} attempts"
+                        )
+                    return True
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    f"Release attempt {attempt + 1}/{max_retries + 1} "
+                    f"failed for '{place_name}': {e}"
+                )
+
+            if attempt < max_retries:
+                logger.debug(f"Retrying release in {delay}s...")
+                await asyncio.sleep(delay)
+                delay *= RELEASE_BACKOFF_FACTOR
+
+        # All retries failed - log critical error
+        logger.error(
+            f"CRITICAL: Failed to release '{place_name}' after "
+            f"{max_retries + 1} attempts. Last error: {last_error}"
+        )
+        return False
+
     async def execute_command(self, place_name: str, command: str) -> Tuple[str, int]:
-        """Execute a command on a target via labgrid-client CLI.
+        """Execute a command with automatic acquire/release.
+
+        Flow: acquire -> execute -> release (with retry)
 
         This properly routes through: Backend -> Coordinator -> Exporter -> DUT
 
@@ -453,15 +633,34 @@ class LabgridClient:
 
         Returns:
             Tuple of (output, exit_code). exit_code is 0 for success.
+
+        Raises:
+            TargetAcquiredByOtherError: If target is acquired by another user.
         """
         if not self._connected or not self._session:
             logger.warning("Not connected to coordinator")
             return ("Error: Not connected to coordinator", 1)
 
         try:
-            output = await self._execute_via_labgrid_client(place_name, command)
-            return (output, 0)
+            # Step 1: Acquire the target
+            await self.acquire_target(place_name)
 
+            try:
+                # Step 2: Execute the command
+                output = await self._execute_via_labgrid_client(place_name, command)
+                return (output, 0)
+            finally:
+                # Step 3: Always release with retry
+                released = await self.release_target_with_retry(place_name)
+                if not released:
+                    # Log but don't fail the command - it already executed
+                    logger.error(
+                        f"Command succeeded but release failed for '{place_name}'"
+                    )
+
+        except TargetAcquiredByOtherError:
+            # Re-raise for API layer to handle
+            raise
         except FileNotFoundError as e:
             logger.error(f"labgrid-client not found: {e}")
             return ("Error: labgrid-client CLI not found", 1)
@@ -503,7 +702,11 @@ class LabgridClient:
     async def _execute_via_labgrid_client(self, place_name: str, command: str) -> str:
         """Execute a command via labgrid-client subprocess.
 
-        This properly routes through: Backend -> Coordinator -> Exporter -> DUT
+        This uses 'labgrid-client ssh' to execute commands on targets with
+        SSHDriver configured. The ssh command passes additional arguments
+        to the ssh subprocess, allowing command execution.
+
+        Route: Backend -> Coordinator -> Exporter -> DUT (via SSH)
 
         Args:
             place_name: The place/target name.
@@ -517,17 +720,19 @@ class LabgridClient:
             TimeoutError: If command times out.
             RuntimeError: If labgrid-client returns an error.
         """
+        # Use 'labgrid-client ssh' with the command as additional argument
+        # This requires an SSHDriver to be configured for the target
         proc = await asyncio.create_subprocess_exec(
             "labgrid-client",
             "-p",
             place_name,
             "-x",
             self._url,
-            "console",
-            "--command",
+            "ssh",
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "LG_USERNAME": LABGRID_DASHBOARD_USER},
         )
 
         try:
@@ -540,6 +745,12 @@ class LabgridClient:
 
         if proc.returncode != 0:
             error = stderr.decode("utf-8", errors="replace")
+            output = stdout.decode("utf-8", errors="replace")
+            # If there's stdout content, return it with the error appended
+            if output.strip():
+                return (
+                    f"{output.strip()}\n[Exit code: {proc.returncode}] {error.strip()}"
+                )
             raise RuntimeError(f"labgrid-client error: {error}")
 
         return stdout.decode("utf-8", errors="replace").strip()
