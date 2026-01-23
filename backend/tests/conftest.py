@@ -4,7 +4,7 @@ Pytest configuration and fixtures for Labgrid Dashboard backend tests.
 
 import os
 import sys
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

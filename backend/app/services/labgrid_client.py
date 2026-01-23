@@ -17,10 +17,8 @@ from app.models.target import CommandOutput, Resource, Target
 
 logger = logging.getLogger(__name__)
 
-# Constants for serial communication
+# Constants for command execution
 COMMAND_TIMEOUT = 30  # seconds
-READ_BUFFER_SIZE = 4096
-COMMAND_DELAY = 0.1  # seconds to wait after sending command
 
 
 class LabgridConnectionError(Exception):
@@ -445,10 +443,9 @@ class LabgridClient:
         return True
 
     async def execute_command(self, place_name: str, command: str) -> Tuple[str, int]:
-        """Execute a command on a target via direct serial connection.
+        """Execute a command on a target via labgrid-client CLI.
 
-        This method finds the NetworkSerialPort resource for the target
-        and executes the command via the serial console.
+        This properly routes through: Backend -> Coordinator -> Exporter -> DUT
 
         Args:
             place_name: The name of the place/target to execute on.
@@ -462,41 +459,23 @@ class LabgridClient:
             return ("Error: Not connected to coordinator", 1)
 
         try:
-            # Refresh cache to get latest resources
-            await self._refresh_cache()
-
-            # Get resources for this place
-            resources = self._get_place_resources_from_cache(place_name)
-            if not resources:
-                return (f"Error: No resources found for '{place_name}'", 1)
-
-            # Find NetworkSerialPort resource
-            serial_resource = None
-            for res in resources:
-                if res.get("cls") == "NetworkSerialPort":
-                    serial_resource = res
-                    break
-
-            if not serial_resource:
-                return (f"Error: No NetworkSerialPort resource for '{place_name}'", 1)
-
-            # Execute command via serial connection
-            host = serial_resource.get("params", {}).get("host")
-            port = serial_resource.get("params", {}).get("port", 5000)
-
-            if not host:
-                return ("Error: Serial resource has no host configured", 1)
-
-            output = await self._execute_via_serial(host, port, command)
+            output = await self._execute_via_labgrid_client(place_name, command)
             return (output, 0)
 
+        except FileNotFoundError as e:
+            logger.error(f"labgrid-client not found: {e}")
+            return ("Error: labgrid-client CLI not found", 1)
+        except TimeoutError as e:
+            logger.error(f"Command timeout on {place_name}: {e}")
+            return (f"Error: {str(e)}", 1)
+        except RuntimeError as e:
+            logger.error(f"labgrid-client error on {place_name}: {e}")
+            return (f"Error: {str(e)}", 1)
         except Exception as e:
             logger.error(f"Failed to execute command on {place_name}: {e}")
             return (f"Error: {str(e)}", 1)
 
-    def _get_place_resources_from_cache(
-        self, place_name: str
-    ) -> List[Dict[str, Any]]:
+    def _get_place_resources_from_cache(self, place_name: str) -> List[Dict[str, Any]]:
         """Get resources for a place from the local cache.
 
         Args:
@@ -521,130 +500,49 @@ class LabgridClient:
 
         return place_resources
 
-    def _parse_serial_output(self, raw_output: str, command: str) -> str:
-        """Parse serial output to extract only the command result.
+    async def _execute_via_labgrid_client(self, place_name: str, command: str) -> str:
+        """Execute a command via labgrid-client subprocess.
 
-        Serial output typically contains:
-        1. Echo of the command we sent
-        2. The actual output
-        3. Shell prompt(s)
-
-        Example raw: "uptime -p\\r\\ndut-1:/# uptime -p\\r\\nup 1 hour, 45 minutes\\r\\ndut-1:/# "
-        Desired: "up 1 hour, 45 minutes"
+        This properly routes through: Backend -> Coordinator -> Exporter -> DUT
 
         Args:
-            raw_output: Raw output from serial connection.
-            command: The command that was executed.
+            place_name: The place/target name.
+            command: The shell command to execute.
 
         Returns:
-            Cleaned output containing only the command result.
+            Command output as string.
+
+        Raises:
+            FileNotFoundError: If labgrid-client is not found.
+            TimeoutError: If command times out.
+            RuntimeError: If labgrid-client returns an error.
         """
-        import re
+        proc = await asyncio.create_subprocess_exec(
+            "labgrid-client",
+            "-p",
+            place_name,
+            "-x",
+            self._url,
+            "console",
+            "--command",
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
 
-        if not raw_output:
-            return ""
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=COMMAND_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise TimeoutError(f"Command timeout after {COMMAND_TIMEOUT}s")
 
-        # Normalize line endings
-        output = raw_output.replace("\r\n", "\n").replace("\r", "\n")
+        if proc.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace")
+            raise RuntimeError(f"labgrid-client error: {error}")
 
-        # Split into lines
-        lines = output.split("\n")
-
-        # Filter out:
-        # 1. Lines that are just the command (echo)
-        # 2. Lines that look like shell prompts (ending with # or $ or >)
-        # 3. Empty lines at start/end
-
-        # Common prompt patterns: "user@host:path# ", "root@dut:/# ", "dut-1:/# ", "$ ", "# "
-        prompt_pattern = re.compile(r"^.*[@:].*[#$>]\s*$|^[#$>]\s*$")
-
-        filtered_lines = []
-        for line in lines:
-            line_stripped = line.strip()
-
-            # Skip empty lines
-            if not line_stripped:
-                continue
-
-            # Skip if line is just the command we sent
-            if line_stripped == command or line_stripped == command.strip():
-                continue
-
-            # Skip if line looks like a prompt
-            if prompt_pattern.match(line_stripped):
-                continue
-
-            # Skip if line contains the command followed by prompt-like characters
-            # e.g., "uptime -p dut-1:/# uptime -p" should be filtered
-            if command in line_stripped and (
-                "#" in line_stripped or "$" in line_stripped
-            ):
-                continue
-
-            filtered_lines.append(line_stripped)
-
-        return "\n".join(filtered_lines).strip()
-
-    async def _execute_via_serial(self, host: str, port: int, command: str) -> str:
-        """Execute a command via serial-over-TCP connection.
-
-        Args:
-            host: TCP host of the serial server.
-            port: TCP port of the serial server.
-            command: Command to execute.
-
-        Returns:
-            Command output as string (cleaned, without prompts/echo).
-        """
-        loop = asyncio.get_event_loop()
-
-        def _sync_execute():
-            """Synchronous execution in thread pool."""
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(COMMAND_TIMEOUT)
-                sock.connect((host, port))
-
-                # Send command with newline
-                sock.sendall(f"{command}\n".encode("utf-8"))
-
-                # Wait for response
-                import time
-
-                time.sleep(COMMAND_DELAY)
-
-                # Read output
-                output_parts = []
-                sock.setblocking(False)
-                try:
-                    while True:
-                        try:
-                            data = sock.recv(READ_BUFFER_SIZE)
-                            if not data:
-                                break
-                            output_parts.append(data.decode("utf-8", errors="replace"))
-                        except BlockingIOError:
-                            break
-                        except socket.timeout:
-                            break
-                except Exception:
-                    pass
-
-                sock.close()
-                return "".join(output_parts)
-
-            except socket.timeout:
-                return f"Error: Connection timeout to {host}:{port}"
-            except ConnectionRefusedError:
-                return f"Error: Connection refused to {host}:{port}"
-            except Exception as e:
-                return f"Error: {str(e)}"
-
-        # Execute in thread pool to avoid blocking
-        raw_output = await loop.run_in_executor(None, _sync_execute)
-
-        # Parse the output to extract only the command result
-        return self._parse_serial_output(raw_output, command)
+        return stdout.decode("utf-8", errors="replace").strip()
 
     def _parse_places(self, places_data: Dict[str, Any]) -> List[Target]:
         """Parse places data from the coordinator into Target objects.
