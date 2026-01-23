@@ -121,9 +121,41 @@
   background-color: var(--color-muted);
 }
 
-.command-button .spinner {
-  display: inline-block;
-  animation: spin 1s linear infinite;
+.command-button .loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.command-button .loading-dots .dot {
+  width: 0.3rem;
+  height: 0.3rem;
+  background-color: currentColor;
+  border-radius: 50%;
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.command-button .loading-dots .dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.command-button .loading-dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.command-button .loading-dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse-dot {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
 }
 
 .command-icon {
