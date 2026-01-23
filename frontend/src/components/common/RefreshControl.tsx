@@ -84,7 +84,7 @@ export function RefreshControl({
             onChange={handleToggleAutoRefresh}
             disabled={autoRefreshInterval <= 0}
           />
-          <span className="toggle-label">Auto</span>
+          <span className="toggle-label">Auto refresh</span>
         </label>
 
         <button
