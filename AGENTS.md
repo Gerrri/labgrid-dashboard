@@ -2,6 +2,8 @@
 
 **Project Language: English** - All code, documentation, and communication should be in English.
 
+**Testing Environment:** Always use `docker compose --profile staging up -d --build` for testing.
+
 Depending on what you're planning, refer to the corresponding rule.
 
 Your workflow should look like this:

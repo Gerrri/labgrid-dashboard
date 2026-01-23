@@ -2,6 +2,39 @@
 .target-table-container {
   width: 100%;
   overflow-x: auto;
+  margin-bottom: 2rem;
+}
+
+.target-table-container:last-child {
+  margin-bottom: 0;
+}
+
+/* Preset Table Header */
+.preset-table-header {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.preset-table-header .preset-name {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.preset-table-header .preset-target-count {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.preset-table-header .preset-description {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
 }
 
 .target-table {
@@ -144,11 +177,54 @@
   margin-bottom: 0;
 }
 
+.details-section.full-width {
+  margin-bottom: 0;
+}
+
 .details-section h4 {
-  margin: 0 0 0.75rem 0;
+  margin: 0;
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-text);
+  display: inline;
+}
+
+/* Collapsible Section Toggle */
+.details-section.collapsible {
+  margin-bottom: 0.75rem;
+}
+
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  margin: -0.5rem;
+  border-radius: 4px;
+  color: var(--color-text);
+  width: 100%;
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.section-toggle:hover {
+  background-color: var(--color-hover);
+}
+
+.toggle-icon {
+  font-size: 0.75rem;
+  width: 1rem;
+  flex-shrink: 0;
+}
+
+.resource-type-hint {
+  font-weight: 400;
+  color: var(--color-muted);
+  margin-left: 0.5rem;
+  font-size: 0.8125rem;
 }
 
 /* Resources List */
@@ -276,34 +352,6 @@
   border-radius: 8px;
 }
 
-/* Refreshing Indicator */
-.target-table-refreshing {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  padding: 0.25rem 0.75rem;
-  background-color: var(--color-primary);
-  color: white;
-  font-size: 0.75rem;
-  text-align: center;
-  z-index: 10;
-  animation: slideDown 0.2s ease;
-}
-
-.target-table-container {
-  position: relative;
-}
-
-@keyframes slideDown {
-  from {
-    transform: translateY(-100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
 /* Scheduled Command Columns */
 .scheduled-column {
   font-size: 0.875rem;
@@ -315,9 +363,8 @@
   font-family: monospace;
   font-size: 0.75rem;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 150px;
+  position: relative;
 }
 
 .scheduled-output {
@@ -326,6 +373,11 @@
   background-color: var(--color-code-bg);
   border-radius: 4px;
   cursor: default;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .scheduled-output.error {
@@ -337,6 +389,65 @@
   .scheduled-output.error {
     background-color: #991b1b;
     color: #fee2e2;
+  }
+}
+
+/* Scheduled Output Tooltip */
+.scheduled-output-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.scheduled-output-tooltip {
+  display: none;
+  position: fixed;
+  min-width: 200px;
+  max-width: 400px;
+  padding: 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.scheduled-output-wrapper:hover .scheduled-output-tooltip {
+  display: block;
+}
+
+.tooltip-command-name {
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tooltip-output {
+  font-family: monospace;
+  font-size: 0.8125rem;
+  color: var(--color-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--color-code-bg);
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tooltip-timestamp {
+  font-size: 0.6875rem;
+  color: var(--color-muted);
+  text-align: right;
+}
+
+@media (prefers-color-scheme: dark) {
+  .scheduled-output-tooltip {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 }
 

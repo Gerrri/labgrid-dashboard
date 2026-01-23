@@ -1,61 +1,109 @@
 # Labgrid Dashboard - Predefined Commands Configuration
 #
-# This file defines the commands that can be executed on targets through the dashboard.
-# Each command has a name, the actual shell command, and a description.
+# This file defines command presets that can be assigned to targets.
+# Each preset contains a set of commands, scheduled commands, and auto-refresh settings.
 
-commands:
-  - name: "Linux Version"
-    command: "cat /etc/os-release"
-    description: "Shows the Linux distribution"
+# Default preset for new targets (fallback when no assignment exists)
+default_preset: basic
 
-  - name: "System Time"
-    command: "date"
-    description: "Current system time"
+# Preset definitions
+presets:
+  basic:
+    name: "Basic"
+    description: "Standard Linux Commands"
+    commands:
+      - name: "Linux Version"
+        command: "cat /etc/os-release"
+        description: "Shows the Linux distribution"
 
-  - name: "Kernel Version"
-    command: "uname -a"
-    description: "Kernel and system info"
+      - name: "System Time"
+        command: "date"
+        description: "Current system time"
 
-  - name: "Uptime"
-    command: "uptime"
-    description: "System uptime"
+      - name: "Kernel Version"
+        command: "uname -a"
+        description: "Kernel and system info"
 
-  - name: "Disk Usage"
-    command: "df -h"
-    description: "Disk usage information"
+      - name: "Uptime"
+        command: "uptime"
+        description: "System uptime"
 
-  - name: "Memory Info"
-    command: "free -h"
-    description: "Memory usage information"
+      - name: "Disk Usage"
+        command: "df -h"
+        description: "Disk usage information"
 
-  - name: "Network Interfaces"
-    command: "ip addr"
-    description: "Network interface configuration"
+      - name: "Memory Info"
+        command: "free -h"
+        description: "Memory usage information"
 
-  - name: "Process List"
-    command: "ps aux --sort=-%mem | head -20"
-    description: "Top 20 processes by memory usage"
+      - name: "Network Interfaces"
+        command: "ip addr"
+        description: "Network interface configuration"
 
-# Commands that should be auto-refreshed when a target is viewed
-auto_refresh_commands:
-  - "Linux Version"
-  - "System Time"
-  - "Uptime"
+      - name: "Process List"
+        command: "ps aux --sort=-%mem | head -20"
+        description: "Top 20 processes by memory usage"
 
-# Scheduled commands that run periodically on all targets
-# The output is displayed as a column in the target table
-scheduled_commands:
-  - name: "Uptime"
-    command: "uptime -p"
-    interval_seconds: 60
-    description: "System uptime (updates every minute)"
+    auto_refresh_commands:
+      - "Linux Version"
+      - "System Time"
+      - "Uptime"
 
-  - name: "Load"
-    command: "cat /proc/loadavg | cut -d' ' -f1-3"
-    interval_seconds: 30
-    description: "System load average (updates every 30s)"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 60
+        description: "System uptime (updates every minute)"
 
-  - name: "Memory"
-    command: "free -h | grep Mem | awk '{print $3\"/\"$2}'"
-    interval_seconds: 60
-    description: "Memory usage (updates every minute)"
+      - name: "Load"
+        command: "cat /proc/loadavg | cut -d' ' -f1-3"
+        interval_seconds: 30
+        description: "System load average (updates every 30s)"
+
+      - name: "Memory"
+        command: "free -h | grep Mem | awk '{print $3\"/\"$2}'"
+        interval_seconds: 60
+        description: "Memory usage (updates every minute)"
+
+  hardware1:
+    name: "Hardware 1"
+    description: "Commands for specialized hardware"
+    commands:
+      - name: "GPIO Status"
+        command: "cat /sys/class/gpio/export 2>/dev/null || echo 'GPIO not available'"
+        description: "GPIO Pin Status"
+
+      - name: "I2C Devices"
+        command: "i2cdetect -y 1 2>/dev/null || echo 'I2C not available'"
+        description: "I2C Bus Scan"
+
+      - name: "Temperature"
+        command: "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 'N/A'"
+        description: "CPU Temperature (millidegrees)"
+
+      - name: "CPU Info"
+        command: "cat /proc/cpuinfo | grep -E '(model name|Hardware|Revision)' | head -5"
+        description: "CPU/Hardware information"
+
+      - name: "USB Devices"
+        command: "lsusb"
+        description: "List USB devices"
+
+      - name: "Kernel Messages"
+        command: "dmesg | tail -20"
+        description: "Last 20 kernel messages"
+
+    auto_refresh_commands:
+      - "GPIO Status"
+      - "Temperature"
+
+    scheduled_commands:
+      - name: "Temperature"
+        command: "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 'N/A'"
+        interval_seconds: 30
+        description: "CPU Temperature monitoring"
+
+      - name: "Load"
+        command: "cat /proc/loadavg | cut -d' ' -f1-3"
+        interval_seconds: 30
+        description: "System load average"

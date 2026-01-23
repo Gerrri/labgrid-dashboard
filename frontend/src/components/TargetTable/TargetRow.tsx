@@ -1,6 +1,18 @@
-import type { Target, CommandOutput, ScheduledCommand } from '../../types';
-import { StatusBadge } from './StatusBadge';
-import { CommandPanel } from '../CommandPanel';
+import { useState, useCallback } from "react";
+import { createPortal } from "react-dom";
+import type { Target, CommandOutput, ScheduledCommand } from "../../types";
+import { StatusBadge } from "./StatusBadge";
+import { CommandPanel } from "../CommandPanel";
+import { TargetSettings } from "../TargetSettings";
+
+interface TooltipState {
+  visible: boolean;
+  cmdName: string;
+  output: string;
+  timestamp: string;
+  x: number;
+  y: number;
+}
 
 interface TargetRowProps {
   target: Target;
@@ -8,9 +20,34 @@ interface TargetRowProps {
   onToggleExpand: (targetName: string) => void;
   onCommandComplete?: (targetName: string, output: CommandOutput) => void;
   commandOutputs?: CommandOutput[];
-  onCommandOutputsChange?: (targetName: string, outputs: CommandOutput[]) => void;
+  onCommandOutputsChange?: (
+    targetName: string,
+    outputs: CommandOutput[],
+  ) => void;
   scheduledCommands?: ScheduledCommand[];
   totalColumns?: number;
+  onPresetChange?: (targetName: string, presetId: string) => void;
+}
+
+/**
+ * Tooltip component rendered via portal
+ */
+function ScheduledOutputTooltip({ state }: { state: TooltipState }) {
+  return createPortal(
+    <div
+      className="scheduled-output-tooltip"
+      style={{
+        display: "block",
+        left: state.x,
+        top: state.y,
+      }}
+    >
+      <div className="tooltip-command-name">{state.cmdName}</div>
+      <div className="tooltip-output">{state.output}</div>
+      <div className="tooltip-timestamp">Last updated: {state.timestamp}</div>
+    </div>,
+    document.body,
+  );
 }
 
 /**
@@ -26,10 +63,36 @@ export function TargetRow({
   onCommandOutputsChange,
   scheduledCommands = [],
   totalColumns = 5,
+  onPresetChange,
 }: TargetRowProps) {
+  const [showSettings, setShowSettings] = useState(false);
+  const [resourcesExpanded, setResourcesExpanded] = useState(false);
+  const [tooltipState, setTooltipState] = useState<TooltipState | null>(null);
+
   const toggleExpand = () => {
     onToggleExpand(target.name);
+    // Reset settings view when collapsing
+    if (expanded) {
+      setShowSettings(false);
+    }
   };
+
+  const handleSettingsClick = useCallback(() => {
+    setShowSettings(true);
+  }, []);
+
+  const handleSettingsClose = useCallback(() => {
+    setShowSettings(false);
+  }, []);
+
+  const handlePresetChange = useCallback(
+    (presetId: string) => {
+      onPresetChange?.(target.name, presetId);
+      // Reset settings view after preset change
+      setShowSettings(false);
+    },
+    [target.name, onPresetChange],
+  );
 
   const handleCommandComplete = (output: CommandOutput) => {
     onCommandComplete?.(target.name, output);
@@ -61,7 +124,53 @@ export function TargetRow({
   };
 
   /**
+   * Handle mouse enter on scheduled output to show tooltip
+   */
+  const handleScheduledOutputMouseEnter = (
+    e: React.MouseEvent<HTMLSpanElement>,
+    cmdName: string,
+    outputText: string,
+    timestamp: string,
+  ) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const tooltipWidth = 300;
+    const tooltipHeight = 150;
+
+    // Calculate position - prefer below, but flip if not enough space
+    let x = rect.left + rect.width / 2 - tooltipWidth / 2;
+    let y = rect.bottom + 8;
+
+    // Adjust horizontal position if it goes off-screen
+    if (x < 10) x = 10;
+    if (x + tooltipWidth > window.innerWidth - 10) {
+      x = window.innerWidth - tooltipWidth - 10;
+    }
+
+    // Flip to top if not enough space below
+    if (y + tooltipHeight > window.innerHeight - 10) {
+      y = rect.top - tooltipHeight - 8;
+    }
+
+    setTooltipState({
+      visible: true,
+      cmdName,
+      output: outputText,
+      timestamp,
+      x,
+      y,
+    });
+  };
+
+  /**
+   * Handle mouse leave on scheduled output to hide tooltip
+   */
+  const handleScheduledOutputMouseLeave = () => {
+    setTooltipState(null);
+  };
+
+  /**
    * Render the scheduled command output for a given command
+   * Includes a tooltip showing command name, full output, and timestamp
    */
   const renderScheduledOutput = (cmdName: string) => {
     const output = target.scheduled_outputs?.[cmdName];
@@ -70,21 +179,31 @@ export function TargetRow({
     }
 
     const isError = output.exit_code !== 0;
+    const formattedTimestamp = new Date(output.timestamp).toLocaleString();
+
     return (
       <span
-        className={`scheduled-output ${isError ? 'error' : ''}`}
-        title={`Last updated: ${new Date(output.timestamp).toLocaleString()}`}
+        className={`scheduled-output ${isError ? "error" : ""}`}
+        onMouseEnter={(e) =>
+          handleScheduledOutputMouseEnter(
+            e,
+            cmdName,
+            output.output,
+            formattedTimestamp,
+          )
+        }
+        onMouseLeave={handleScheduledOutputMouseLeave}
       >
         {output.output}
       </span>
     );
   };
 
-  const canExecuteCommands = target.status !== 'offline';
+  const canExecuteCommands = target.status !== "offline";
 
   return (
     <>
-      <tr className={`target-row ${expanded ? 'expanded' : ''}`}>
+      <tr className={`target-row ${expanded ? "expanded" : ""}`}>
         <td className="target-name">{target.name}</td>
         <td className="target-status">
           <StatusBadge status={target.status} />
@@ -103,9 +222,9 @@ export function TargetRow({
             className="btn-expand"
             onClick={toggleExpand}
             aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse details' : 'Expand details'}
+            aria-label={expanded ? "Collapse details" : "Expand details"}
           >
-            {expanded ? '▼' : '▶'}
+            {expanded ? "▼" : "▶"}
           </button>
         </td>
       </tr>
@@ -113,49 +232,82 @@ export function TargetRow({
         <tr className="target-details-row">
           <td colSpan={totalColumns}>
             <div className="target-details">
-              {/* Resources Section */}
-              <div className="details-section">
-                <h4>Resources ({target.resources.length})</h4>
-                {target.resources.length > 0 ? (
-                  <ul className="resources-list">
-                    {target.resources.map((resource, index) => (
-                      <li key={index} className="resource-item">
-                        <strong>{resource.type}</strong>
-                        {Object.keys(resource.params).length > 0 && (
-                          <pre className="resource-params">
-                            {JSON.stringify(resource.params, null, 2)}
-                          </pre>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-muted">No resources available</p>
-                )}
-              </div>
-
-              {/* Command Panel Section */}
-              <div className="details-section">
-                {canExecuteCommands ? (
-                  <CommandPanel
+              {showSettings ? (
+                /* Full-width Target Settings when open */
+                <div className="details-section full-width">
+                  <TargetSettings
                     targetName={target.name}
-                    initialOutputs={target.last_command_outputs}
-                    persistedOutputs={commandOutputs}
-                    onCommandComplete={handleCommandComplete}
-                    onOutputsChange={handleOutputsChange}
+                    onPresetChange={handlePresetChange}
+                    onClose={handleSettingsClose}
                   />
-                ) : (
-                  <div className="commands-offline">
-                    <p className="text-muted">
-                      Commands unavailable - target is offline
-                    </p>
+                </div>
+              ) : (
+                <>
+                  {/* Resources Section - Collapsible */}
+                  <div className="details-section collapsible">
+                    <button
+                      className="section-toggle"
+                      onClick={() => setResourcesExpanded(!resourcesExpanded)}
+                      aria-expanded={resourcesExpanded}
+                    >
+                      <span className="toggle-icon">
+                        {resourcesExpanded ? "▼" : "▶"}
+                      </span>
+                      <h4>
+                        Connection Type
+                        {target.resources.length > 0 && (
+                          <span className="resource-type-hint">
+                            {target.resources.map((r) => r.type).join(", ")}
+                          </span>
+                        )}
+                      </h4>
+                    </button>
+                    {resourcesExpanded && target.resources.length > 0 && (
+                      <ul className="resources-list">
+                        {target.resources.map((resource, index) => (
+                          <li key={index} className="resource-item">
+                            <strong>{resource.type}</strong>
+                            {Object.keys(resource.params).length > 0 && (
+                              <pre className="resource-params">
+                                {JSON.stringify(resource.params, null, 2)}
+                              </pre>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {resourcesExpanded && target.resources.length === 0 && (
+                      <p className="text-muted">No resources available</p>
+                    )}
                   </div>
-                )}
-              </div>
+
+                  {/* Command Panel Section */}
+                  <div className="details-section">
+                    {canExecuteCommands ? (
+                      <CommandPanel
+                        targetName={target.name}
+                        initialOutputs={target.last_command_outputs}
+                        persistedOutputs={commandOutputs}
+                        onCommandComplete={handleCommandComplete}
+                        onOutputsChange={handleOutputsChange}
+                        onSettingsClick={handleSettingsClick}
+                      />
+                    ) : (
+                      <div className="commands-offline">
+                        <p className="text-muted">
+                          Commands unavailable - target is offline
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </td>
         </tr>
       )}
+      {/* Fixed position tooltip for scheduled outputs - rendered via portal */}
+      {tooltipState && <ScheduledOutputTooltip state={tooltipState} />}
     </>
   );
 }

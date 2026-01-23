@@ -3,10 +3,11 @@
  * This file runs before each test file.
  */
 
-import '@testing-library/jest-dom';
+import { vi } from "vitest";
+import "@testing-library/jest-dom";
 
 // Mock window.matchMedia for components that use it
-Object.defineProperty(window, 'matchMedia', {
+Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
@@ -35,8 +36,9 @@ class IntersectionObserverMock {
   unobserve = vi.fn();
   disconnect = vi.fn();
   root = null;
-  rootMargin = '';
+  rootMargin = "";
   thresholds = [];
 }
 
-window.IntersectionObserver = IntersectionObserverMock as unknown as typeof IntersectionObserver;
+window.IntersectionObserver =
+  IntersectionObserverMock as unknown as typeof IntersectionObserver;
