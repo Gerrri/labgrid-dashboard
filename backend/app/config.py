@@ -51,3 +51,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached application settings."""
     return Settings()
+
+
+# Labgrid Dashboard user identifier for acquire/release operations
+LABGRID_DASHBOARD_USER = "labgrid-dashboard"

@@ -10,7 +10,7 @@ the scheduled commands defined in that target's assigned preset.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Set
 
 from app.models.target import ScheduledCommand, ScheduledCommandOutput
@@ -41,6 +41,8 @@ class SchedulerService:
         self._get_target_preset_callback: Optional[Callable] = None
         # Flag to track if scheduler is running
         self._running = False
+        # Locks per target to prevent concurrent command execution on same target
+        self._target_locks: Dict[str, asyncio.Lock] = {}
 
     def set_commands(self, commands: List[ScheduledCommand]) -> None:
         """Set the scheduled commands from configuration (legacy method).
@@ -227,6 +229,12 @@ class SchedulerService:
     async def _execute_on_targets_with_preset(self, cmd: ScheduledCommand) -> None:
         """Execute a command on targets that have this command in their preset.
 
+        Scheduled commands run on ALL targets except offline ones.
+        This allows monitoring metrics (uptime, load, memory) even on acquired targets.
+
+        Uses per-target locking to prevent race conditions when multiple scheduled
+        commands try to execute on the same target simultaneously.
+
         Args:
             cmd: The scheduled command to execute.
         """
@@ -238,50 +246,78 @@ class SchedulerService:
             # Get current targets
             targets = await self._get_targets_callback()
 
+            logger.info(
+                f"Scheduler for '{cmd.name}': found {len(targets)} targets: {[t.name for t in targets]}"
+            )
+
             # Execute on each target that has this command in its preset
             for target in targets:
+                # Skip only offline targets (scheduled commands run on acquired targets too)
                 if target.status == "offline":
+                    logger.info(
+                        f"Skipping '{cmd.name}' on '{target.name}': target is offline"
+                    )
                     continue
 
                 # Check if this command applies to this target's preset
                 if not self._should_execute_on_target(cmd, target.name):
+                    logger.info(
+                        f"Skipping '{cmd.name}' on '{target.name}': command not in target's preset"
+                    )
                     continue
 
-                try:
-                    output, exit_code = await self._execute_callback(
-                        target.name, cmd.command
-                    )
+                # Get or create lock for this target
+                if target.name not in self._target_locks:
+                    self._target_locks[target.name] = asyncio.Lock()
 
-                    # Store the output
-                    scheduled_output = ScheduledCommandOutput(
-                        command_name=cmd.name,
-                        output=output.strip() if output else "",
-                        timestamp=datetime.utcnow(),
-                        exit_code=exit_code,
-                    )
+                target_lock = self._target_locks[target.name]
 
-                    if cmd.name not in self._outputs:
-                        self._outputs[cmd.name] = {}
-                    self._outputs[cmd.name][target.name] = scheduled_output
-
-                    # Notify listeners (e.g., WebSocket clients)
-                    if self._notify_callback:
-                        try:
-                            await self._notify_callback(
-                                cmd.name, target.name, scheduled_output
-                            )
-                        except Exception as e:
-                            logger.debug(f"Notify callback error: {e}")
-
-                    output_preview = output[:50] + "..." if len(output) > 50 else output
+                # Try to acquire lock, skip if already locked (another command is running)
+                if target_lock.locked():
                     logger.debug(
-                        f"Executed '{cmd.name}' on '{target.name}': {output_preview}"
+                        f"Skipping '{cmd.name}' on '{target.name}': target is busy"
                     )
+                    continue
 
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to execute '{cmd.name}' on '{target.name}': {e}"
-                    )
+                # Execute with lock to prevent concurrent access
+                async with target_lock:
+                    try:
+                        output, exit_code = await self._execute_callback(
+                            target.name, cmd.command
+                        )
+
+                        # Store the output
+                        scheduled_output = ScheduledCommandOutput(
+                            command_name=cmd.name,
+                            output=output.strip() if output else "",
+                            timestamp=datetime.now(timezone.utc),
+                            exit_code=exit_code,
+                        )
+
+                        if cmd.name not in self._outputs:
+                            self._outputs[cmd.name] = {}
+                        self._outputs[cmd.name][target.name] = scheduled_output
+
+                        # Notify listeners (e.g., WebSocket clients)
+                        if self._notify_callback:
+                            try:
+                                await self._notify_callback(
+                                    cmd.name, target.name, scheduled_output
+                                )
+                            except Exception as e:
+                                logger.debug(f"Notify callback error: {e}")
+
+                        output_preview = (
+                            output[:50] + "..." if len(output) > 50 else output
+                        )
+                        logger.debug(
+                            f"Executed '{cmd.name}' on '{target.name}': {output_preview}"
+                        )
+
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to execute '{cmd.name}' on '{target.name}': {e}"
+                        )
 
         except Exception as e:
             logger.error(
