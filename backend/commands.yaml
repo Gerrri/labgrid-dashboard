@@ -52,18 +52,18 @@ presets:
     scheduled_commands:
       - name: "Uptime"
         command: "uptime -p"
-        interval_seconds: 60
-        description: "System uptime (updates every minute)"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"
 
       - name: "Load"
         command: "cat /proc/loadavg | cut -d' ' -f1-3"
-        interval_seconds: 30
-        description: "System load average (updates every 30s)"
+        interval_seconds: 180
+        description: "System load average (updates every 3 minutes)"
 
       - name: "Memory"
         command: "free -h | grep Mem | awk '{print $3\"/\"$2}'"
-        interval_seconds: 60
-        description: "Memory usage (updates every minute)"
+        interval_seconds: 180
+        description: "Memory usage (updates every 3 minutes)"
 
   hardware1:
     name: "Hardware 1"
@@ -100,10 +100,10 @@ presets:
     scheduled_commands:
       - name: "Temperature"
         command: "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 'N/A'"
-        interval_seconds: 30
-        description: "CPU Temperature monitoring"
+        interval_seconds: 180
+        description: "CPU Temperature monitoring (updates every 3 minutes)"
 
       - name: "Load"
         command: "cat /proc/loadavg | cut -d' ' -f1-3"
-        interval_seconds: 30
-        description: "System load average"
+        interval_seconds: 180
+        description: "System load average (updates every 3 minutes)"
