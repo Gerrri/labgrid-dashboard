@@ -170,19 +170,64 @@ export function TargetRow({
   /**
    * Render the scheduled command output for a given command
    * Includes a tooltip showing command name, full output, and timestamp
+   *
+   * Cache Strategy:
+   * - If no output exists: show "N/A"
+   * - If exit_code != 0 (error): show "N/A"
+   * - If cache expired (older than 60 minutes): show "N/A"
+   * - Otherwise: show the output
    */
   const renderScheduledOutput = (cmdName: string) => {
     const output = target.scheduled_outputs?.[cmdName];
-    if (!output) {
-      return <span className="text-muted">-</span>;
+    const CACHE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes in milliseconds
+
+    // Debug logging (enable with VITE_DEBUG_SCHEDULED=true)
+    if (import.meta.env.VITE_DEBUG_SCHEDULED === 'true') {
+      console.log(`[${target.name}] renderScheduledOutput for "${cmdName}":`, {
+        hasScheduledOutputs: !!target.scheduled_outputs,
+        scheduledOutputsKeys: target.scheduled_outputs ? Object.keys(target.scheduled_outputs) : [],
+        output: output,
+      });
     }
 
+    // No output available
+    if (!output) {
+      return <span className="text-muted">N/A</span>;
+    }
+
+    // Check if cache is expired
+    const outputTimestamp = new Date(output.timestamp).getTime();
+    const now = Date.now();
+    const isCacheExpired = now - outputTimestamp > CACHE_TIMEOUT_MS;
+
+    // Show N/A if error occurred or cache expired
     const isError = output.exit_code !== 0;
+
+    // Debug logging for cache/error checks (enable with VITE_DEBUG_SCHEDULED=true)
+    if (import.meta.env.VITE_DEBUG_SCHEDULED === 'true') {
+      console.log(`[${target.name}] "${cmdName}" cache check:`, {
+        timestamp_raw: output.timestamp,
+        outputTimestamp: outputTimestamp,
+        outputTimestamp_isNaN: isNaN(outputTimestamp),
+        now: now,
+        age_ms: now - outputTimestamp,
+        CACHE_TIMEOUT_MS: CACHE_TIMEOUT_MS,
+        isCacheExpired: isCacheExpired,
+        exit_code: output.exit_code,
+        isError: isError,
+        willShowNA: isError || isCacheExpired,
+      });
+    }
+
+    if (isError || isCacheExpired) {
+      return <span className="text-muted">N/A</span>;
+    }
+
     const formattedTimestamp = new Date(output.timestamp).toLocaleString();
 
     return (
       <span
-        className={`scheduled-output ${isError ? "error" : ""}`}
+        className="scheduled-output"
         onMouseEnter={(e) =>
           handleScheduledOutputMouseEnter(
             e,

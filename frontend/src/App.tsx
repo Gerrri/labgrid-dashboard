@@ -73,6 +73,15 @@ function App() {
     [refetch],
   );
 
+  const handleScheduledOutput = useCallback(
+    (targetName: string, commandName: string, output: CommandOutput) => {
+      console.log(`Scheduled output for ${targetName} (${commandName}):`, output.output);
+      refetch();
+      setLastUpdated(new Date());
+    },
+    [refetch],
+  );
+
   const handleTargetsList = useCallback(
     (targetsList: Target[]) => {
       console.log("Received targets list via WebSocket:", targetsList.length);
@@ -93,6 +102,7 @@ function App() {
   const { connected, subscribe } = useWebSocket({
     onTargetUpdate: handleTargetUpdate,
     onCommandOutput: handleCommandOutput,
+    onScheduledOutput: handleScheduledOutput,
     onTargetsList: handleTargetsList,
     onConnectionChange: handleConnectionChange,
   });

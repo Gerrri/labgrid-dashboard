@@ -8,6 +8,7 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 interface UseWebSocketOptions {
   onTargetUpdate?: (target: Target) => void;
   onCommandOutput?: (targetName: string, output: CommandOutput) => void;
+  onScheduledOutput?: (targetName: string, commandName: string, output: CommandOutput) => void;
   onTargetsList?: (targets: Target[]) => void;
   onConnectionChange?: (connected: boolean) => void;
 }
@@ -33,6 +34,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
   const {
     onTargetUpdate,
     onCommandOutput,
+    onScheduledOutput,
     onTargetsList,
     onConnectionChange,
   } = options;
@@ -76,6 +78,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
                 output: CommandOutput;
               };
               onCommandOutput?.(data.target_name, data.output);
+              break;
+            }
+            case 'scheduled_output': {
+              const data = message.data as {
+                target: string;
+                command_name: string;
+                output: CommandOutput;
+              };
+              onScheduledOutput?.(data.target, data.command_name, data.output);
               break;
             }
             case 'targets_list':
@@ -129,7 +140,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
     } catch (err) {
       console.error('Failed to create WebSocket:', err);
     }
-  }, [onTargetUpdate, onCommandOutput, onTargetsList, onConnectionChange]);
+  }, [onTargetUpdate, onCommandOutput, onScheduledOutput, onTargetsList, onConnectionChange]);
 
   const send = useCallback((message: WSMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
