@@ -6,7 +6,6 @@ import {
   LoadingSpinner,
   ErrorMessage,
   ConnectionStatus,
-  RefreshControl,
 } from "./components/common";
 import { api } from "./services/api";
 import type {
@@ -16,8 +15,6 @@ import type {
   ScheduledCommandOutput,
 } from "./types";
 import "./App.css";
-
-const AUTO_REFRESH_INTERVAL = 30; // seconds
 
 /**
  * Main application component
@@ -205,11 +202,6 @@ function App() {
           <ConnectionStatus
             isConnected={connected}
             isReconnecting={isReconnecting}
-          />
-          <RefreshControl
-            onRefresh={handleRefresh}
-            autoRefreshInterval={AUTO_REFRESH_INTERVAL}
-            isRefreshing={loading}
           />
         </div>
       </header>
