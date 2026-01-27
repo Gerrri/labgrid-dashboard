@@ -187,6 +187,9 @@ class TestLabgridClientWithMockedSession:
                 }
             }
         }
+        connected_client._session.places = {
+            "exporter-1": MagicMock(acquired="user@host")
+        }
 
         # Mock _refresh_cache to prevent it from overwriting our test data
         with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
@@ -195,6 +198,28 @@ class TestLabgridClientWithMockedSession:
         assert len(places) == 1
         assert places[0].status == "acquired"
         assert places[0].acquired_by == "user@host"
+
+    @pytest.mark.asyncio
+    async def test_get_places_with_acquired_resource_without_user(
+        self, connected_client: LabgridClient
+    ):
+        """Test acquired status falls back to N/A when username is missing."""
+        mock_entry = self._create_mock_resource_entry(
+            cls_name="NetworkSerialPort",
+            params={"host": "192.168.1.100", "port": 5000},
+            acquired="exporter-1",
+            avail=True,
+        )
+        connected_client._session.resources = {
+            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
+        }
+        connected_client._session.places = {"exporter-1": MagicMock(acquired="")}
+
+        places = await connected_client.get_places()
+
+        assert len(places) == 1
+        assert places[0].status == "acquired"
+        assert places[0].acquired_by == "N/A"
 
     @pytest.mark.asyncio
     async def test_get_places_with_offline_resource(
