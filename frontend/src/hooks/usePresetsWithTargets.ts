@@ -22,6 +22,11 @@ interface UsePresetsWithTargetsResult {
   refetch: () => Promise<void>;
   defaultPresetId: string;
   updateTargetFromWebSocket: (target: Target) => boolean;
+  setTargetStatus: (
+    targetName: string,
+    status: Target["status"],
+    acquiredBy?: string | null,
+  ) => boolean;
   updateTargetScheduledOutput: (
     targetName: string,
     commandName: string,
@@ -214,6 +219,45 @@ export function usePresetsWithTargets(): UsePresetsWithTargetsResult {
     return applied;
   }, []);
 
+  const setTargetStatus = useCallback(
+    (
+      targetName: string,
+      status: Target["status"],
+      acquiredBy?: string | null,
+    ) => {
+      let applied = false;
+
+      setPresetGroups((groups) => {
+        const next = groups.map((group) => {
+          const index = group.targets.findIndex(
+            (existingTarget) => existingTarget.name === targetName,
+          );
+
+          if (index === -1) {
+            return group;
+          }
+
+          applied = true;
+          const updatedTargets = [...group.targets];
+          const existingTarget = updatedTargets[index];
+          updatedTargets[index] = {
+            ...existingTarget,
+            status,
+            acquired_by:
+              acquiredBy !== undefined ? acquiredBy : existingTarget.acquired_by,
+          };
+
+          return { ...group, targets: updatedTargets };
+        });
+
+        return applied ? next : groups;
+      });
+
+      return applied;
+    },
+    [],
+  );
+
   return {
     presetGroups,
     loading,
@@ -221,6 +265,7 @@ export function usePresetsWithTargets(): UsePresetsWithTargetsResult {
     refetch: fetchData,
     defaultPresetId,
     updateTargetFromWebSocket,
+    setTargetStatus,
     updateTargetScheduledOutput,
   };
 }

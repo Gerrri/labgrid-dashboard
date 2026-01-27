@@ -74,10 +74,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
               break;
             case 'command_output': {
               const data = message.data as {
-                target_name: string;
+                target_name?: string;
+                target?: string;
                 output: CommandOutput;
               };
-              onCommandOutput?.(data.target_name, data.output);
+              const targetName = data.target_name ?? data.target;
+              if (targetName) {
+                onCommandOutput?.(targetName, data.output);
+              }
               break;
             }
             case 'scheduled_output': {

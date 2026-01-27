@@ -30,6 +30,7 @@ function App() {
     refetch,
     updateTargetScheduledOutput,
     updateTargetFromWebSocket,
+    setTargetStatus,
   } = usePresetsWithTargets();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
@@ -81,10 +82,26 @@ function App() {
   const handleCommandOutput = useCallback(
     (targetName: string, output: CommandOutput) => {
       console.log(`Command output for ${targetName}:`, output);
-      refetch();
+      setCommandOutputs((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(targetName) || [];
+        next.set(targetName, [output, ...existing]);
+        return next;
+      });
       setLastUpdated(new Date());
     },
-    [refetch],
+    [],
+  );
+
+  const handleCommandStart = useCallback(
+    (targetName: string) => {
+      const applied = setTargetStatus(targetName, "acquired");
+      if (!applied) {
+        refetch();
+      }
+      setLastUpdated(new Date());
+    },
+    [refetch, setTargetStatus],
   );
 
   const handleScheduledOutput = useCallback(
@@ -156,10 +173,13 @@ function App() {
   const handleCommandComplete = useCallback(
     (targetName: string, output: CommandOutput) => {
       console.log(`Command completed on ${targetName}:`, output.command);
-      // The TargetRow already handles updating its local state
-      // We can optionally refetch to sync with server
+      const applied = setTargetStatus(targetName, "available", null);
+      if (!applied) {
+        refetch();
+      }
+      setLastUpdated(new Date());
     },
-    [],
+    [refetch, setTargetStatus],
   );
 
   // Handler to update command outputs for a specific target
@@ -238,6 +258,7 @@ function App() {
             key={group.preset.id}
             targets={group.targets}
             loading={loading}
+            onCommandStart={handleCommandStart}
             onCommandComplete={handleCommandComplete}
             commandOutputs={commandOutputs}
             onCommandOutputsChange={handleCommandOutputsChange}

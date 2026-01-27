@@ -18,6 +18,7 @@ interface TargetRowProps {
   target: Target;
   expanded: boolean;
   onToggleExpand: (targetName: string) => void;
+  onCommandStart?: (targetName: string) => void;
   onCommandComplete?: (targetName: string, output: CommandOutput) => void;
   commandOutputs?: CommandOutput[];
   onCommandOutputsChange?: (
@@ -58,6 +59,7 @@ export function TargetRow({
   target,
   expanded,
   onToggleExpand,
+  onCommandStart,
   onCommandComplete,
   commandOutputs,
   onCommandOutputsChange,
@@ -95,6 +97,10 @@ export function TargetRow({
 
   const handleCommandComplete = (output: CommandOutput) => {
     onCommandComplete?.(target.name, output);
+  };
+
+  const handleCommandStart = () => {
+    onCommandStart?.(target.name);
   };
 
   const handleOutputsChange = (outputs: CommandOutput[]) => {
@@ -293,6 +299,7 @@ export function TargetRow({
                       targetName={target.name}
                       initialOutputs={target.last_command_outputs}
                       persistedOutputs={commandOutputs}
+                      onCommandStart={handleCommandStart}
                       onCommandComplete={handleCommandComplete}
                       onOutputsChange={handleOutputsChange}
                       onSettingsClick={handleSettingsClick}

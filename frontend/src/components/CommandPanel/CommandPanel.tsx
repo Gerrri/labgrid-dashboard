@@ -9,6 +9,7 @@ interface CommandPanelProps {
   targetName: string;
   initialOutputs?: CommandOutput[];
   persistedOutputs?: CommandOutput[];
+  onCommandStart?: () => void;
   onCommandComplete?: (output: CommandOutput) => void;
   onOutputsChange?: (outputs: CommandOutput[]) => void;
   onSettingsClick?: () => void;
@@ -22,6 +23,7 @@ export function CommandPanel({
   targetName,
   initialOutputs = [],
   persistedOutputs,
+  onCommandStart,
   onCommandComplete,
   onOutputsChange,
   onSettingsClick,
@@ -85,6 +87,7 @@ export function CommandPanel({
       try {
         setExecutingCommand(commandName);
         setError(null);
+        onCommandStart?.();
         const response = await api.executeCommand(targetName, commandName);
         const newOutput = response.data;
 
@@ -101,7 +104,7 @@ export function CommandPanel({
         setExecutingCommand(null);
       }
     },
-    [targetName, outputs, onCommandComplete, onOutputsChange],
+    [targetName, outputs, onCommandComplete, onOutputsChange, onCommandStart],
   );
 
   const handleClearOutput = () => {
