@@ -5,6 +5,8 @@ These tests verify the client behavior using pytest-mock for mocking
 the labgrid library dependencies.
 """
 
+import asyncio
+import unittest.mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -95,25 +97,6 @@ class TestLabgridClient:
         assert exit_code == 1
         assert "Not connected" in output
 
-    def test_parse_serial_output_removes_prompts(self, client: LabgridClient):
-        """Test that serial output parsing removes prompts correctly."""
-        raw = "uptime -p\r\ndut-1:/# uptime -p\r\nup 1 hour, 45 minutes\r\ndut-1:/# "
-        result = client._parse_serial_output(raw, "uptime -p")
-
-        assert result == "up 1 hour, 45 minutes"
-
-    def test_parse_serial_output_handles_empty_input(self, client: LabgridClient):
-        """Test that serial output parsing handles empty input."""
-        result = client._parse_serial_output("", "echo test")
-        assert result == ""
-
-    def test_parse_serial_output_removes_command_echo(self, client: LabgridClient):
-        """Test that serial output parsing removes command echo."""
-        raw = "echo hello\nhello\nroot@host:~# "
-        result = client._parse_serial_output(raw, "echo hello")
-
-        assert result == "hello"
-
     def test_resolve_hostname_to_ip(self, client: LabgridClient):
         """Test hostname resolution."""
         # localhost should resolve to 127.0.0.1
@@ -168,19 +151,21 @@ class TestLabgridClientWithMockedSession:
     @pytest.mark.asyncio
     async def test_get_places_with_resources(self, connected_client: LabgridClient):
         """Test getting places when resources are available."""
-        # Set up mock resources in the session's resources dict
-        # Structure: session.resources[exporter][group][res_type] = ResourceEntry
-        mock_entry = self._create_mock_resource_entry(
-            cls_name="NetworkSerialPort",
-            params={"host": "192.168.1.100", "port": 5000},
-            acquired=None,
-            avail=True,
-        )
-        connected_client._session.resources = {
-            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
+        # Populate _resources_cache directly to simulate what _refresh_cache would do
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            }
         }
 
-        places = await connected_client.get_places()
+        # Mock _refresh_cache to prevent it from overwriting our test data
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            places = await connected_client.get_places()
 
         assert len(places) == 1
         assert places[0].name == "exporter-1"
@@ -191,17 +176,21 @@ class TestLabgridClientWithMockedSession:
         self, connected_client: LabgridClient
     ):
         """Test getting places with acquired resources."""
-        mock_entry = self._create_mock_resource_entry(
-            cls_name="NetworkSerialPort",
-            params={"host": "192.168.1.100", "port": 5000},
-            acquired="user@host",
-            avail=True,
-        )
-        connected_client._session.resources = {
-            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
+        # Populate _resources_cache directly to simulate what _refresh_cache would do
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": "user@host",
+                    "avail": True,
+                }
+            }
         }
 
-        places = await connected_client.get_places()
+        # Mock _refresh_cache to prevent it from overwriting our test data
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            places = await connected_client.get_places()
 
         assert len(places) == 1
         assert places[0].status == "acquired"
@@ -212,18 +201,21 @@ class TestLabgridClientWithMockedSession:
         self, connected_client: LabgridClient
     ):
         """Test getting places with offline resources."""
-        # For offline resources, params might be empty and avail=False
-        mock_entry = self._create_mock_resource_entry(
-            cls_name="NetworkSerialPort",
-            params={},
-            acquired=None,
-            avail=False,
-        )
-        connected_client._session.resources = {
-            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
+        # Populate _resources_cache directly to simulate what _refresh_cache would do
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {},
+                    "acquired": None,
+                    "avail": False,
+                }
+            }
         }
 
-        places = await connected_client.get_places()
+        # Mock _refresh_cache to prevent it from overwriting our test data
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            places = await connected_client.get_places()
 
         assert len(places) == 1
         assert places[0].status == "offline"
@@ -239,3 +231,141 @@ class TestLabgridClientWithMockedSession:
 
         result = await connected_client.subscribe_updates(callback)
         assert result is True
+
+
+class TestLabgridClientCommandExecution:
+    """Test cases for command execution via labgrid-client CLI."""
+
+    @pytest_asyncio.fixture
+    async def connected_client(self):
+        """Create a connected client with mocked session."""
+        client = LabgridClient(url="localhost:20408")
+
+        # Mock the session
+        mock_session = MagicMock()
+        mock_session.resources = {}
+        mock_session.places = {}
+        mock_session.start = AsyncMock()
+        mock_session.close = AsyncMock()
+
+        client._session = mock_session
+        client._connected = True
+
+        yield client
+
+        await client.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_execute_command_success(self, connected_client: LabgridClient):
+        """Test successful command execution via labgrid-client."""
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(
+            return_value=(b"up 1 hour, 45 minutes\n", b"")
+        )
+        mock_proc.kill = MagicMock()
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            output, exit_code = await connected_client.execute_command(
+                "exporter-1", "uptime -p"
+            )
+
+        assert exit_code == 0
+        assert output == "up 1 hour, 45 minutes"
+
+    @pytest.mark.asyncio
+    async def test_execute_command_labgrid_client_not_found(
+        self, connected_client: LabgridClient
+    ):
+        """Test error when labgrid-client CLI is not found."""
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=FileNotFoundError("labgrid-client not found"),
+        ):
+            output, exit_code = await connected_client.execute_command(
+                "exporter-1", "uptime"
+            )
+
+        assert exit_code == 1
+        assert "labgrid-client CLI not found" in output
+
+    @pytest.mark.asyncio
+    async def test_execute_command_timeout(self, connected_client: LabgridClient):
+        """Test command timeout handling."""
+        # Mock process for acquire (succeeds)
+        mock_acquire_proc = MagicMock()
+        mock_acquire_proc.returncode = 0
+        mock_acquire_proc.communicate = AsyncMock(return_value=(b"", b""))
+        mock_acquire_proc.kill = MagicMock()
+
+        # Mock process for execute (times out)
+        mock_exec_proc = MagicMock()
+        mock_exec_proc.kill = MagicMock()
+
+        call_count = 0
+        async def create_subprocess_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # First call is acquire, second is release, third is execute
+            if call_count == 1:  # acquire
+                return mock_acquire_proc
+            else:  # execute
+                return mock_exec_proc
+
+        with patch("asyncio.create_subprocess_exec", side_effect=create_subprocess_side_effect):
+            with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+                output, exit_code = await connected_client.execute_command(
+                    "exporter-1", "sleep 100"
+                )
+
+        assert exit_code == 1
+        assert "command timeout" in output.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_command_labgrid_error(self, connected_client: LabgridClient):
+        """Test handling of labgrid-client errors."""
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(
+            return_value=(b"", b"Error: place 'unknown' not found\n")
+        )
+        mock_proc.kill = MagicMock()
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            output, exit_code = await connected_client.execute_command(
+                "unknown-place", "uptime"
+            )
+
+        assert exit_code == 1
+        assert "failed to acquire target" in output.lower() or "labgrid-client error" in output.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_via_labgrid_client_uses_correct_args(
+        self, connected_client: LabgridClient
+    ):
+        """Test that _execute_via_labgrid_client uses correct CLI arguments (ssh without --)."""
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"output", b""))
+        mock_proc.kill = MagicMock()
+
+        with patch(
+            "asyncio.create_subprocess_exec", return_value=mock_proc
+        ) as mock_exec:
+            await connected_client._execute_via_labgrid_client(
+                "test-place", "echo hello"
+            )
+
+            # Verify the command arguments - note: no '--' separator
+            mock_exec.assert_called_once_with(
+                "labgrid-client",
+                "-p",
+                "test-place",
+                "-x",
+                "localhost:20408",
+                "ssh",
+                "echo hello",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=unittest.mock.ANY,
+            )

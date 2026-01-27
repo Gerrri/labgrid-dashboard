@@ -3,7 +3,7 @@ REST API routes for target and preset operations.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from app.models.responses import (
@@ -244,7 +244,7 @@ async def execute_command(
         output = CommandOutput(
             command=command.command,
             output=result_output,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             exit_code=exit_code,
         )
     except Exception as e:
@@ -252,7 +252,7 @@ async def execute_command(
         output = CommandOutput(
             command=command.command,
             output=f"Error executing command: {str(e)}",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             exit_code=1,
         )
 

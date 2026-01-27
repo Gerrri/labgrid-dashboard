@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useTargets } from '../../hooks/useTargets';
 
 // Mock the API module
@@ -84,7 +84,9 @@ describe('useTargets', () => {
     });
 
     // Call refetch
-    await result.current.refetch();
+    await act(async () => {
+      await result.current.refetch();
+    });
 
     // Should have called getTargets twice (initial + refetch)
     expect(api.getTargets).toHaveBeenCalledTimes(2);
@@ -108,7 +110,9 @@ describe('useTargets', () => {
     expect(result.current.targets).toHaveLength(1);
 
     // Refetch
-    await result.current.refetch();
+    await act(async () => {
+      await result.current.refetch();
+    });
 
     await waitFor(() => {
       expect(result.current.targets).toHaveLength(2);

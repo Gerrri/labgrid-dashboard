@@ -4,16 +4,15 @@ WebSocket endpoint for real-time communication.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
-
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.api.connection_manager import manager
 from app.models.target import CommandOutput, ScheduledCommandOutput
 from app.services.command_service import CommandService
 from app.services.labgrid_client import LabgridClient
 from app.services.scheduler_service import SchedulerService
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
@@ -55,14 +54,20 @@ async def handle_subscribe(websocket: WebSocket, data: Dict[str, Any]) -> None:
     targets = data.get("targets", ["all"])
     manager.subscribe(websocket, targets)
 
-    # Send initial targets list
+    # Send initial targets list with scheduled outputs
     if _labgrid_client:
         targets_list = await _labgrid_client.get_places()
+        # Enrich with scheduled outputs
+        if _scheduler_service:
+            for target in targets_list:
+                target.scheduled_outputs = _scheduler_service.get_outputs_for_target(
+                    target.name
+                )
         await manager.send_to(
             websocket,
             {
                 "type": "targets_list",
-                "data": [t.model_dump() for t in targets_list],
+                "data": [t.model_dump(mode='json') for t in targets_list],
             },
         )
     logger.info(f"Client subscribed to: {targets}")
@@ -117,13 +122,17 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             websocket,
             {
                 "type": "error",
-                "data": {"detail": f"Command '{command_name}' not found in configuration"},
+                "data": {
+                    "detail": f"Command '{command_name}' not found in configuration"
+                },
             },
         )
         return
 
     # Execute the command via Labgrid Coordinator
-    logger.info(f"Executing command '{command.name}' on target '{target_name}' via WebSocket")
+    logger.info(
+        f"Executing command '{command.name}' on target '{target_name}' via WebSocket"
+    )
 
     try:
         # Execute command through the labgrid client
@@ -134,7 +143,7 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
         output = CommandOutput(
             command=command.command,
             output=result_output,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             exit_code=exit_code,
         )
     except Exception as e:
@@ -142,7 +151,7 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
         output = CommandOutput(
             command=command.command,
             output=f"Error executing command: {str(e)}",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             exit_code=1,
         )
 
@@ -153,7 +162,7 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             "type": "command_output",
             "data": {
                 "target": target_name,
-                "output": output.model_dump(),
+                "output": output.model_dump(mode='json'),
             },
         },
     )
@@ -164,7 +173,7 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             "type": "command_output",
             "data": {
                 "target": target_name,
-                "output": output.model_dump(),
+                "output": output.model_dump(mode='json'),
             },
         },
         target_name,
@@ -188,14 +197,20 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     await manager.connect(websocket)
 
     try:
-        # Send initial targets list on connection
+        # Send initial targets list on connection with scheduled outputs
         if _labgrid_client:
             targets_list = await _labgrid_client.get_places()
+            # Enrich with scheduled outputs
+            if _scheduler_service:
+                for target in targets_list:
+                    target.scheduled_outputs = (
+                        _scheduler_service.get_outputs_for_target(target.name)
+                    )
             await manager.send_to(
                 websocket,
                 {
                     "type": "targets_list",
-                    "data": [t.model_dump() for t in targets_list],
+                    "data": [t.model_dump(mode='json') for t in targets_list],
                 },
             )
 
@@ -245,6 +260,16 @@ async def broadcast_target_update(target_data: Dict[str, Any]) -> None:
         target_data: The target data to broadcast.
     """
     target_name = target_data.get("name", "")
+
+    # Enrich with scheduled outputs if available
+    if _scheduler_service and target_name:
+        scheduled_outputs = _scheduler_service.get_outputs_for_target(target_name)
+        # Serialize ScheduledCommandOutput objects to JSON-compatible dicts
+        target_data["scheduled_outputs"] = {
+            cmd_name: output.model_dump(mode='json')
+            for cmd_name, output in scheduled_outputs.items()
+        }
+
     await manager.broadcast_to_subscribed(
         {
             "type": "target_update",
@@ -261,11 +286,13 @@ async def broadcast_targets_list() -> None:
         # Enrich with scheduled outputs
         if _scheduler_service:
             for target in targets_list:
-                target.scheduled_outputs = _scheduler_service.get_outputs_for_target(target.name)
+                target.scheduled_outputs = _scheduler_service.get_outputs_for_target(
+                    target.name
+                )
         await manager.broadcast(
             {
                 "type": "targets_list",
-                "data": [t.model_dump() for t in targets_list],
+                "data": [t.model_dump(mode='json') for t in targets_list],
             },
         )
 
@@ -288,7 +315,7 @@ async def broadcast_scheduled_output(
             "data": {
                 "command_name": command_name,
                 "target": target_name,
-                "output": output.model_dump(),
+                "output": output.model_dump(mode='json'),
             },
         },
         target_name,

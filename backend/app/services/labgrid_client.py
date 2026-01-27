@@ -10,23 +10,34 @@ Note: Labgrid switched from WAMP to gRPC in version 24.0.
 
 import asyncio
 import logging
+import os
 import socket
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.config import LABGRID_DASHBOARD_USER, get_settings
 from app.models.target import CommandOutput, Resource, Target
 
 logger = logging.getLogger(__name__)
 
-# Constants for serial communication
-COMMAND_TIMEOUT = 30  # seconds
-READ_BUFFER_SIZE = 4096
-COMMAND_DELAY = 0.1  # seconds to wait after sending command
+# Constants for release retry logic
+RELEASE_MAX_RETRIES = 3
+RELEASE_INITIAL_DELAY = 1.0  # seconds
+RELEASE_BACKOFF_FACTOR = 2.0
 
 
 class LabgridConnectionError(Exception):
     """Raised when connection to Labgrid Coordinator fails."""
 
     pass
+
+
+class TargetAcquiredByOtherError(Exception):
+    """Raised when target is acquired by another user."""
+
+    def __init__(self, target_name: str, acquired_by: str):
+        self.target_name = target_name
+        self.acquired_by = acquired_by
+        super().__init__(f"Target '{target_name}' is acquired by '{acquired_by}'")
 
 
 class LabgridClient:
@@ -84,7 +95,9 @@ class LabgridClient:
                 loop = asyncio.get_event_loop()
 
                 # Create ClientSession with address and loop
-                self._session = ClientSession(self._url, loop)
+                # Using keyword arguments for attrs-generated constructor
+                # type: ignore - Pylance doesn't understand attrs-generated __init__
+                self._session = ClientSession(address=self._url, loop=loop)  # type: ignore
 
                 # Start the session (connects to coordinator)
                 await self._session.start()
@@ -444,11 +457,174 @@ class LabgridClient:
         )
         return True
 
-    async def execute_command(self, place_name: str, command: str) -> Tuple[str, int]:
-        """Execute a command on a target via direct serial connection.
+    async def _get_acquired_by(self, place_name: str) -> Optional[str]:
+        """Get the user who has acquired a target.
 
-        This method finds the NetworkSerialPort resource for the target
-        and executes the command via the serial console.
+        Args:
+            place_name: The place name to check.
+
+        Returns:
+            The username who acquired the target, or None if not acquired.
+        """
+        await self._refresh_cache()
+        if place_name in self._resources_cache:
+            for res_type, res_data in self._resources_cache[place_name].items():
+                acquired = res_data.get("acquired")
+                if acquired:
+                    return acquired
+        return None
+
+    async def acquire_target(self, place_name: str) -> bool:
+        """Acquire a target for command execution.
+
+        Args:
+            place_name: The place name to acquire.
+
+        Returns:
+            True if successfully acquired.
+
+        Raises:
+            TargetAcquiredByOtherError: If target is acquired by another user.
+            RuntimeError: If acquisition fails for other reasons.
+        """
+        # Check current state first
+        current_owner = await self._get_acquired_by(place_name)
+        if current_owner and current_owner != LABGRID_DASHBOARD_USER:
+            raise TargetAcquiredByOtherError(place_name, current_owner)
+
+        if current_owner == LABGRID_DASHBOARD_USER:
+            logger.debug(f"Target '{place_name}' already acquired by us")
+            return True  # Already acquired by us
+
+        logger.info(f"Acquiring target '{place_name}' as '{LABGRID_DASHBOARD_USER}'")
+        proc = await asyncio.create_subprocess_exec(
+            "labgrid-client",
+            "-p",
+            place_name,
+            "-x",
+            self._url,
+            "acquire",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "LG_USERNAME": LABGRID_DASHBOARD_USER},
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace")
+            if "already acquired" in error.lower():
+                # Parse who acquired it from error message
+                # Error format: "place X is already acquired by Y"
+                acquired_by = self._parse_acquired_by_from_error(error)
+                raise TargetAcquiredByOtherError(place_name, acquired_by)
+            raise RuntimeError(f"Failed to acquire target: {error}")
+
+        logger.info(f"Successfully acquired target '{place_name}'")
+        return True
+
+    def _parse_acquired_by_from_error(self, error: str) -> str:
+        """Parse the username from an 'already acquired' error message.
+
+        Args:
+            error: The error message from labgrid-client.
+
+        Returns:
+            The username who acquired the target, or 'unknown' if parsing fails.
+        """
+        # Try to parse "place X is already acquired by Y"
+        try:
+            if "acquired by" in error.lower():
+                parts = error.lower().split("acquired by")
+                if len(parts) > 1:
+                    return parts[1].strip().split()[0]
+        except Exception:
+            pass
+        return "unknown"
+
+    async def release_target(self, place_name: str) -> bool:
+        """Release a previously acquired target.
+
+        Args:
+            place_name: The place name to release.
+
+        Returns:
+            True if successfully released, False otherwise.
+        """
+        logger.info(f"Releasing target '{place_name}'")
+        proc = await asyncio.create_subprocess_exec(
+            "labgrid-client",
+            "-p",
+            place_name,
+            "-x",
+            self._url,
+            "release",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "LG_USERNAME": LABGRID_DASHBOARD_USER},
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace")
+            logger.warning(f"Failed to release target '{place_name}': {error}")
+            return False
+
+        logger.info(f"Successfully released target '{place_name}'")
+        return True
+
+    async def release_target_with_retry(
+        self,
+        place_name: str,
+        max_retries: int = RELEASE_MAX_RETRIES,
+    ) -> bool:
+        """Release a target with retry logic to prevent permanent locks.
+
+        Uses exponential backoff: 1s, 2s, 4s
+
+        Args:
+            place_name: The place name to release.
+            max_retries: Maximum number of retry attempts.
+
+        Returns:
+            True if successfully released, False if all retries failed.
+        """
+        delay = RELEASE_INITIAL_DELAY
+        last_error: Optional[Exception] = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                success = await self.release_target(place_name)
+                if success:
+                    if attempt > 0:
+                        logger.info(
+                            f"Released '{place_name}' after {attempt + 1} attempts"
+                        )
+                    return True
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    f"Release attempt {attempt + 1}/{max_retries + 1} "
+                    f"failed for '{place_name}': {e}"
+                )
+
+            if attempt < max_retries:
+                logger.debug(f"Retrying release in {delay}s...")
+                await asyncio.sleep(delay)
+                delay *= RELEASE_BACKOFF_FACTOR
+
+        # All retries failed - log critical error
+        logger.error(
+            f"CRITICAL: Failed to release '{place_name}' after "
+            f"{max_retries + 1} attempts. Last error: {last_error}"
+        )
+        return False
+
+    async def execute_command(self, place_name: str, command: str) -> Tuple[str, int]:
+        """Execute a command with automatic acquire/release.
+
+        Flow: acquire -> execute -> release (with retry)
+
+        This properly routes through: Backend -> Coordinator -> Exporter -> DUT
 
         Args:
             place_name: The name of the place/target to execute on.
@@ -456,47 +632,48 @@ class LabgridClient:
 
         Returns:
             Tuple of (output, exit_code). exit_code is 0 for success.
+
+        Raises:
+            TargetAcquiredByOtherError: If target is acquired by another user.
         """
         if not self._connected or not self._session:
             logger.warning("Not connected to coordinator")
             return ("Error: Not connected to coordinator", 1)
 
         try:
-            # Refresh cache to get latest resources
-            await self._refresh_cache()
+            # Step 1: Acquire the target
+            await self.acquire_target(place_name)
 
-            # Get resources for this place
-            resources = self._get_place_resources_from_cache(place_name)
-            if not resources:
-                return (f"Error: No resources found for '{place_name}'", 1)
+            try:
+                # Step 2: Execute the command
+                output = await self._execute_via_labgrid_client(place_name, command)
+                return (output, 0)
+            finally:
+                # Step 3: Always release with retry
+                released = await self.release_target_with_retry(place_name)
+                if not released:
+                    # Log but don't fail the command - it already executed
+                    logger.error(
+                        f"Command succeeded but release failed for '{place_name}'"
+                    )
 
-            # Find NetworkSerialPort resource
-            serial_resource = None
-            for res in resources:
-                if res.get("cls") == "NetworkSerialPort":
-                    serial_resource = res
-                    break
-
-            if not serial_resource:
-                return (f"Error: No NetworkSerialPort resource for '{place_name}'", 1)
-
-            # Execute command via serial connection
-            host = serial_resource.get("params", {}).get("host")
-            port = serial_resource.get("params", {}).get("port", 5000)
-
-            if not host:
-                return ("Error: Serial resource has no host configured", 1)
-
-            output = await self._execute_via_serial(host, port, command)
-            return (output, 0)
-
+        except TargetAcquiredByOtherError:
+            # Re-raise for API layer to handle
+            raise
+        except FileNotFoundError as e:
+            logger.error(f"labgrid-client not found: {e}")
+            return ("Error: labgrid-client CLI not found", 1)
+        except TimeoutError as e:
+            logger.error(f"Command timeout on {place_name}: {e}")
+            return (f"Error: {str(e)}", 1)
+        except RuntimeError as e:
+            logger.error(f"labgrid-client error on {place_name}: {e}")
+            return (f"Error: {str(e)}", 1)
         except Exception as e:
             logger.error(f"Failed to execute command on {place_name}: {e}")
             return (f"Error: {str(e)}", 1)
 
-    def _get_place_resources_from_cache(
-        self, place_name: str
-    ) -> List[Dict[str, Any]]:
+    def _get_place_resources_from_cache(self, place_name: str) -> List[Dict[str, Any]]:
         """Get resources for a place from the local cache.
 
         Args:
@@ -521,130 +698,63 @@ class LabgridClient:
 
         return place_resources
 
-    def _parse_serial_output(self, raw_output: str, command: str) -> str:
-        """Parse serial output to extract only the command result.
+    async def _execute_via_labgrid_client(self, place_name: str, command: str) -> str:
+        """Execute a command via labgrid-client subprocess.
 
-        Serial output typically contains:
-        1. Echo of the command we sent
-        2. The actual output
-        3. Shell prompt(s)
+        This uses 'labgrid-client ssh' to execute commands on targets with
+        SSHDriver configured. The ssh command passes additional arguments
+        to the ssh subprocess, allowing command execution.
 
-        Example raw: "uptime -p\\r\\ndut-1:/# uptime -p\\r\\nup 1 hour, 45 minutes\\r\\ndut-1:/# "
-        Desired: "up 1 hour, 45 minutes"
+        Route: Backend -> Coordinator -> Exporter -> DUT (via SSH)
 
         Args:
-            raw_output: Raw output from serial connection.
-            command: The command that was executed.
+            place_name: The place/target name.
+            command: The shell command to execute.
 
         Returns:
-            Cleaned output containing only the command result.
+            Command output as string.
+
+        Raises:
+            FileNotFoundError: If labgrid-client is not found.
+            TimeoutError: If command times out.
+            RuntimeError: If labgrid-client returns an error.
         """
-        import re
+        # Use 'labgrid-client ssh' with the command as additional argument
+        # This requires an SSHDriver to be configured for the target
+        proc = await asyncio.create_subprocess_exec(
+            "labgrid-client",
+            "-p",
+            place_name,
+            "-x",
+            self._url,
+            "ssh",
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "LG_USERNAME": LABGRID_DASHBOARD_USER},
+        )
 
-        if not raw_output:
-            return ""
+        try:
+            timeout = get_settings().labgrid_command_timeout
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            timeout = get_settings().labgrid_command_timeout
+            raise TimeoutError(f"Command timeout after {timeout}s")
 
-        # Normalize line endings
-        output = raw_output.replace("\r\n", "\n").replace("\r", "\n")
+        if proc.returncode != 0:
+            error = stderr.decode("utf-8", errors="replace")
+            output = stdout.decode("utf-8", errors="replace")
+            # If there's stdout content, return it with the error appended
+            if output.strip():
+                return (
+                    f"{output.strip()}\n[Exit code: {proc.returncode}] {error.strip()}"
+                )
+            raise RuntimeError(f"labgrid-client error: {error}")
 
-        # Split into lines
-        lines = output.split("\n")
-
-        # Filter out:
-        # 1. Lines that are just the command (echo)
-        # 2. Lines that look like shell prompts (ending with # or $ or >)
-        # 3. Empty lines at start/end
-
-        # Common prompt patterns: "user@host:path# ", "root@dut:/# ", "dut-1:/# ", "$ ", "# "
-        prompt_pattern = re.compile(r"^.*[@:].*[#$>]\s*$|^[#$>]\s*$")
-
-        filtered_lines = []
-        for line in lines:
-            line_stripped = line.strip()
-
-            # Skip empty lines
-            if not line_stripped:
-                continue
-
-            # Skip if line is just the command we sent
-            if line_stripped == command or line_stripped == command.strip():
-                continue
-
-            # Skip if line looks like a prompt
-            if prompt_pattern.match(line_stripped):
-                continue
-
-            # Skip if line contains the command followed by prompt-like characters
-            # e.g., "uptime -p dut-1:/# uptime -p" should be filtered
-            if command in line_stripped and (
-                "#" in line_stripped or "$" in line_stripped
-            ):
-                continue
-
-            filtered_lines.append(line_stripped)
-
-        return "\n".join(filtered_lines).strip()
-
-    async def _execute_via_serial(self, host: str, port: int, command: str) -> str:
-        """Execute a command via serial-over-TCP connection.
-
-        Args:
-            host: TCP host of the serial server.
-            port: TCP port of the serial server.
-            command: Command to execute.
-
-        Returns:
-            Command output as string (cleaned, without prompts/echo).
-        """
-        loop = asyncio.get_event_loop()
-
-        def _sync_execute():
-            """Synchronous execution in thread pool."""
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(COMMAND_TIMEOUT)
-                sock.connect((host, port))
-
-                # Send command with newline
-                sock.sendall(f"{command}\n".encode("utf-8"))
-
-                # Wait for response
-                import time
-
-                time.sleep(COMMAND_DELAY)
-
-                # Read output
-                output_parts = []
-                sock.setblocking(False)
-                try:
-                    while True:
-                        try:
-                            data = sock.recv(READ_BUFFER_SIZE)
-                            if not data:
-                                break
-                            output_parts.append(data.decode("utf-8", errors="replace"))
-                        except BlockingIOError:
-                            break
-                        except socket.timeout:
-                            break
-                except Exception:
-                    pass
-
-                sock.close()
-                return "".join(output_parts)
-
-            except socket.timeout:
-                return f"Error: Connection timeout to {host}:{port}"
-            except ConnectionRefusedError:
-                return f"Error: Connection refused to {host}:{port}"
-            except Exception as e:
-                return f"Error: {str(e)}"
-
-        # Execute in thread pool to avoid blocking
-        raw_output = await loop.run_in_executor(None, _sync_execute)
-
-        # Parse the output to extract only the command result
-        return self._parse_serial_output(raw_output, command)
+        return stdout.decode("utf-8", errors="replace").strip()
 
     def _parse_places(self, places_data: Dict[str, Any]) -> List[Target]:
         """Parse places data from the coordinator into Target objects.

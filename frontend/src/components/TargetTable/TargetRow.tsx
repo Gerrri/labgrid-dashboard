@@ -66,7 +66,6 @@ export function TargetRow({
   onPresetChange,
 }: TargetRowProps) {
   const [showSettings, setShowSettings] = useState(false);
-  const [resourcesExpanded, setResourcesExpanded] = useState(false);
   const [tooltipState, setTooltipState] = useState<TooltipState | null>(null);
 
   const toggleExpand = () => {
@@ -171,19 +170,64 @@ export function TargetRow({
   /**
    * Render the scheduled command output for a given command
    * Includes a tooltip showing command name, full output, and timestamp
+   *
+   * Cache Strategy:
+   * - If no output exists: show "N/A"
+   * - If exit_code != 0 (error): show "N/A"
+   * - If cache expired (older than 60 minutes): show "N/A"
+   * - Otherwise: show the output
    */
   const renderScheduledOutput = (cmdName: string) => {
     const output = target.scheduled_outputs?.[cmdName];
-    if (!output) {
-      return <span className="text-muted">-</span>;
+    const CACHE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes in milliseconds
+
+    // Debug logging (enable with VITE_DEBUG_SCHEDULED=true)
+    if (import.meta.env.VITE_DEBUG_SCHEDULED === 'true') {
+      console.log(`[${target.name}] renderScheduledOutput for "${cmdName}":`, {
+        hasScheduledOutputs: !!target.scheduled_outputs,
+        scheduledOutputsKeys: target.scheduled_outputs ? Object.keys(target.scheduled_outputs) : [],
+        output: output,
+      });
     }
 
+    // No output available
+    if (!output) {
+      return <span className="text-muted">N/A</span>;
+    }
+
+    // Check if cache is expired
+    const outputTimestamp = new Date(output.timestamp).getTime();
+    const now = Date.now();
+    const isCacheExpired = now - outputTimestamp > CACHE_TIMEOUT_MS;
+
+    // Show N/A if error occurred or cache expired
     const isError = output.exit_code !== 0;
+
+    // Debug logging for cache/error checks (enable with VITE_DEBUG_SCHEDULED=true)
+    if (import.meta.env.VITE_DEBUG_SCHEDULED === 'true') {
+      console.log(`[${target.name}] "${cmdName}" cache check:`, {
+        timestamp_raw: output.timestamp,
+        outputTimestamp: outputTimestamp,
+        outputTimestamp_isNaN: isNaN(outputTimestamp),
+        now: now,
+        age_ms: now - outputTimestamp,
+        CACHE_TIMEOUT_MS: CACHE_TIMEOUT_MS,
+        isCacheExpired: isCacheExpired,
+        exit_code: output.exit_code,
+        isError: isError,
+        willShowNA: isError || isCacheExpired,
+      });
+    }
+
+    if (isError || isCacheExpired) {
+      return <span className="text-muted">N/A</span>;
+    }
+
     const formattedTimestamp = new Date(output.timestamp).toLocaleString();
 
     return (
       <span
-        className={`scheduled-output ${isError ? "error" : ""}`}
+        className="scheduled-output"
         onMouseEnter={(e) =>
           handleScheduledOutputMouseEnter(
             e,
@@ -242,65 +286,25 @@ export function TargetRow({
                   />
                 </div>
               ) : (
-                <>
-                  {/* Resources Section - Collapsible */}
-                  <div className="details-section collapsible">
-                    <button
-                      className="section-toggle"
-                      onClick={() => setResourcesExpanded(!resourcesExpanded)}
-                      aria-expanded={resourcesExpanded}
-                    >
-                      <span className="toggle-icon">
-                        {resourcesExpanded ? "▼" : "▶"}
-                      </span>
-                      <h4>
-                        Connection Type
-                        {target.resources.length > 0 && (
-                          <span className="resource-type-hint">
-                            {target.resources.map((r) => r.type).join(", ")}
-                          </span>
-                        )}
-                      </h4>
-                    </button>
-                    {resourcesExpanded && target.resources.length > 0 && (
-                      <ul className="resources-list">
-                        {target.resources.map((resource, index) => (
-                          <li key={index} className="resource-item">
-                            <strong>{resource.type}</strong>
-                            {Object.keys(resource.params).length > 0 && (
-                              <pre className="resource-params">
-                                {JSON.stringify(resource.params, null, 2)}
-                              </pre>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {resourcesExpanded && target.resources.length === 0 && (
-                      <p className="text-muted">No resources available</p>
-                    )}
-                  </div>
-
-                  {/* Command Panel Section */}
-                  <div className="details-section">
-                    {canExecuteCommands ? (
-                      <CommandPanel
-                        targetName={target.name}
-                        initialOutputs={target.last_command_outputs}
-                        persistedOutputs={commandOutputs}
-                        onCommandComplete={handleCommandComplete}
-                        onOutputsChange={handleOutputsChange}
-                        onSettingsClick={handleSettingsClick}
-                      />
-                    ) : (
-                      <div className="commands-offline">
-                        <p className="text-muted">
-                          Commands unavailable - target is offline
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </>
+                /* Command Panel Section */
+                <div className="details-section">
+                  {canExecuteCommands ? (
+                    <CommandPanel
+                      targetName={target.name}
+                      initialOutputs={target.last_command_outputs}
+                      persistedOutputs={commandOutputs}
+                      onCommandComplete={handleCommandComplete}
+                      onOutputsChange={handleOutputsChange}
+                      onSettingsClick={handleSettingsClick}
+                    />
+                  ) : (
+                    <div className="commands-offline">
+                      <p className="text-muted">
+                        Commands unavailable - target is offline
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </td>

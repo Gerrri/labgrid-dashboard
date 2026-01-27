@@ -56,7 +56,7 @@ docker compose up -d
 ```
 
 ### Staging Mode
-Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands are executed on actual containers via Serial-over-TCP.
+Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands are executed via `labgrid-client` CLI, which properly routes through: Backend → Coordinator → Exporter → DUT.
 
 ```bash
 # Start with real command execution
@@ -83,7 +83,7 @@ This demonstrates the "acquired" status in the dashboard with:
 │  │  DUT-1  │   │  DUT-2  │   │  DUT-3  │  (Alpine Linux)   │
 │  │ :5000   │   │ :5000   │   │ :5000   │                   │
 │  └────┬────┘   └────┬────┘   └────┬────┘                   │
-│       │ Serial-TCP  │ Serial-TCP  │                        │
+│       │ Serial     │ Serial     │ Serial                   │
 │  ┌────▼────┐   ┌────▼────┐   ┌────▼────┐                   │
 │  │Exporter1│   │Exporter2│   │Exporter3│  (labgrid)        │
 │  └────┬────┘   └────┬────┘   └────┬────┘                   │
@@ -91,7 +91,7 @@ This demonstrates the "acquired" status in the dashboard with:
 │            ┌─────▼─────┐                                    │
 │            │Coordinator│  (labgrid 24.0+)                  │
 │            └─────┬─────┘                                    │
-│                  │ gRPC                                     │
+│                  │ labgrid-client CLI                       │
 │            ┌─────▼─────┐                                    │
 │            │  Backend  │  (FastAPI)                         │
 │            └─────┬─────┘                                    │
@@ -101,6 +101,20 @@ This demonstrates the "acquired" status in the dashboard with:
 │            └───────────┘                                    │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**How Command Execution Works:**
+1. Frontend sends command request to Backend via HTTP
+2. Backend uses `labgrid-client` CLI to execute commands
+3. `labgrid-client` communicates with Coordinator via gRPC
+4. Coordinator routes to appropriate Exporter
+5. Exporter uses the appropriate driver (ShellDriver, SSHDriver, etc.) to execute on DUT
+6. Output flows back through the same path
+
+**Supported Connection Types:**
+Labgrid automatically selects the appropriate driver based on available resources:
+- **NetworkSerialPort** - Serial over TCP (used in staging)
+- **USBSerialPort** - Direct USB serial connection
+- **SSHDriver** - SSH connection for network-accessible DUTs
 
 ## Docker Commands
 
@@ -226,6 +240,7 @@ See `.env.example` for the full list of available configuration options.
 | `COORDINATOR_URL` | Labgrid Coordinator gRPC address (host:port or ws://host:port for legacy config) | `coordinator:20408` |
 | `COORDINATOR_REALM` | Realm (kept for compatibility, not used in gRPC) | `realm1` |
 | `COORDINATOR_TIMEOUT` | Connection timeout in seconds | `30` |
+| `LABGRID_COMMAND_TIMEOUT` | Command execution timeout in seconds | `30` |
 | `COMMANDS_FILE` | Path to commands configuration file | `commands.yaml` |
 | `DEBUG` | Enable debug mode | `false` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:3000,http://localhost:5173` |

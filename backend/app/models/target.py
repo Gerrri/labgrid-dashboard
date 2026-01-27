@@ -2,7 +2,7 @@
 Pydantic models for Labgrid targets, resources, and command outputs.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -20,7 +20,7 @@ class CommandOutput(BaseModel):
 
     command: str = Field(..., description="The command that was executed")
     output: str = Field(..., description="The command output (stdout/stderr)")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="When the command was executed")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the command was executed")
     exit_code: int = Field(..., description="Command exit code (0 = success)")
 
 
@@ -29,7 +29,7 @@ class ScheduledCommandOutput(BaseModel):
 
     command_name: str = Field(..., description="Display name of the command (used as column header)")
     output: str = Field(..., description="The command output (stdout/stderr)")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="When the command was last executed")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the command was last executed")
     exit_code: int = Field(default=0, description="Command exit code (0 = success)")
 
 

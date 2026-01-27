@@ -24,11 +24,46 @@ vi.mock('../services/api', () => ({
             status: 'available',
             acquired_by: null,
             ip_address: '192.168.1.100',
+            web_url: null,
             resources: [],
             last_command_outputs: [],
+            scheduled_outputs: {},
           },
         ],
         total: 1,
+      },
+    }),
+    getPresets: vi.fn().mockResolvedValue({
+      data: {
+        presets: [
+          {
+            id: 'basic',
+            name: 'Basic',
+            description: 'Standard commands',
+          },
+        ],
+        default_preset: 'basic',
+      },
+    }),
+    getTargetPreset: vi.fn().mockResolvedValue({
+      data: {
+        target_name: 'test-dut-1',
+        preset_id: 'basic',
+        preset: {
+          id: 'basic',
+          name: 'Basic',
+          description: 'Standard commands',
+        },
+      },
+    }),
+    getPresetDetail: vi.fn().mockResolvedValue({
+      data: {
+        id: 'basic',
+        name: 'Basic',
+        description: 'Standard commands',
+        commands: [],
+        scheduled_commands: [],
+        auto_refresh_commands: [],
       },
     }),
   },
@@ -56,11 +91,14 @@ describe('App', () => {
     });
   });
 
-  it('shows loading spinner initially', () => {
+  it('shows loading spinner initially', async () => {
     render(<App />);
 
     // The loading spinner should be present initially
     expect(screen.getByText('Loading targets...')).toBeInTheDocument();
+
+    // Let async effects settle to avoid act warnings
+    await screen.findByText('test-dut-1');
   });
 
   it('displays targets after loading', async () => {
@@ -83,7 +121,9 @@ describe('App', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText(/1 target found/)).toBeInTheDocument();
+      const footerCount = document.querySelector('.target-count');
+      expect(footerCount).not.toBeNull();
+      expect(footerCount).toHaveTextContent('1 target found');
     });
   });
 });

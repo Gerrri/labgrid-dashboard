@@ -5,6 +5,7 @@ Main entry point for the Labgrid Dashboard API server.
 Handles startup/shutdown lifecycle, CORS configuration, and route registration.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -86,6 +87,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         timeout=settings.coordinator_timeout,
     )
     await labgrid_client.connect()
+
+    # Wait for coordinator synchronization to complete before starting scheduler
+    # This ensures all targets are known before scheduled commands start executing
+    logger.info("Waiting for coordinator synchronization...")
+    await asyncio.sleep(2)
 
     # Initialize scheduler service with preset support
     scheduler_service = SchedulerService()
