@@ -6,6 +6,7 @@ the labgrid library dependencies.
 """
 
 import asyncio
+import unittest.mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -150,16 +151,16 @@ class TestLabgridClientWithMockedSession:
     @pytest.mark.asyncio
     async def test_get_places_with_resources(self, connected_client: LabgridClient):
         """Test getting places when resources are available."""
-        # Set up mock resources in the session's resources dict
-        # Structure: session.resources[exporter][group][res_type] = ResourceEntry
-        mock_entry = self._create_mock_resource_entry(
-            cls_name="NetworkSerialPort",
-            params={"host": "192.168.1.100", "port": 5000},
-            acquired=None,
-            avail=True,
-        )
-        connected_client._session.resources = {
-            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
+        # Populate _resources_cache directly to simulate what _refresh_cache would do
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            }
         }
 
         # Mock _refresh_cache to prevent it from overwriting our test data
@@ -175,14 +176,16 @@ class TestLabgridClientWithMockedSession:
         self, connected_client: LabgridClient
     ):
         """Test getting places with acquired resources."""
-        mock_entry = self._create_mock_resource_entry(
-            cls_name="NetworkSerialPort",
-            params={"host": "192.168.1.100", "port": 5000},
-            acquired="user@host",
-            avail=True,
-        )
-        connected_client._session.resources = {
-            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
+        # Populate _resources_cache directly to simulate what _refresh_cache would do
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": "user@host",
+                    "avail": True,
+                }
+            }
         }
 
         # Mock _refresh_cache to prevent it from overwriting our test data
@@ -198,15 +201,16 @@ class TestLabgridClientWithMockedSession:
         self, connected_client: LabgridClient
     ):
         """Test getting places with offline resources."""
-        # For offline resources, params might be empty and avail=False
-        mock_entry = self._create_mock_resource_entry(
-            cls_name="NetworkSerialPort",
-            params={},
-            acquired=None,
-            avail=False,
-        )
-        connected_client._session.resources = {
-            "exporter-1": {"default": {"NetworkSerialPort": mock_entry}}
+        # Populate _resources_cache directly to simulate what _refresh_cache would do
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {},
+                    "acquired": None,
+                    "avail": False,
+                }
+            }
         }
 
         # Mock _refresh_cache to prevent it from overwriting our test data
