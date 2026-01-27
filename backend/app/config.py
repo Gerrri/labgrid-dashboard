@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     coordinator_url: str = "ws://localhost:20408/ws"
     coordinator_realm: str = "realm1"
     coordinator_timeout: int = 30
+    labgrid_command_timeout: int = 30  # Command execution timeout in seconds
 
     # CORS settings - accepts comma-separated string or list
     cors_origins: List[str] = ["http://localhost:3000"]

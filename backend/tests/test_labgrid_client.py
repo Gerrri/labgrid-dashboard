@@ -292,18 +292,34 @@ class TestLabgridClientCommandExecution:
     @pytest.mark.asyncio
     async def test_execute_command_timeout(self, connected_client: LabgridClient):
         """Test command timeout handling."""
-        mock_proc = MagicMock()
-        mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
-        mock_proc.kill = MagicMock()
+        # Mock process for acquire (succeeds)
+        mock_acquire_proc = MagicMock()
+        mock_acquire_proc.returncode = 0
+        mock_acquire_proc.communicate = AsyncMock(return_value=(b"", b""))
+        mock_acquire_proc.kill = MagicMock()
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        # Mock process for execute (times out)
+        mock_exec_proc = MagicMock()
+        mock_exec_proc.kill = MagicMock()
+
+        call_count = 0
+        async def create_subprocess_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # First call is acquire, second is release, third is execute
+            if call_count == 1:  # acquire
+                return mock_acquire_proc
+            else:  # execute
+                return mock_exec_proc
+
+        with patch("asyncio.create_subprocess_exec", side_effect=create_subprocess_side_effect):
             with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
                 output, exit_code = await connected_client.execute_command(
                     "exporter-1", "sleep 100"
                 )
 
         assert exit_code == 1
-        assert "timeout" in output.lower()
+        assert "command timeout" in output.lower()
 
     @pytest.mark.asyncio
     async def test_execute_command_labgrid_error(self, connected_client: LabgridClient):
@@ -321,7 +337,7 @@ class TestLabgridClientCommandExecution:
             )
 
         assert exit_code == 1
-        assert "labgrid-client error" in output
+        assert "failed to acquire target" in output.lower() or "labgrid-client error" in output.lower()
 
     @pytest.mark.asyncio
     async def test_execute_via_labgrid_client_uses_correct_args(

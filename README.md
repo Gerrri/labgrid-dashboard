@@ -240,6 +240,7 @@ See `.env.example` for the full list of available configuration options.
 | `COORDINATOR_URL` | Labgrid Coordinator gRPC address (host:port or ws://host:port for legacy config) | `coordinator:20408` |
 | `COORDINATOR_REALM` | Realm (kept for compatibility, not used in gRPC) | `realm1` |
 | `COORDINATOR_TIMEOUT` | Connection timeout in seconds | `30` |
+| `LABGRID_COMMAND_TIMEOUT` | Command execution timeout in seconds | `30` |
 | `COMMANDS_FILE` | Path to commands configuration file | `commands.yaml` |
 | `DEBUG` | Enable debug mode | `false` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:3000,http://localhost:5173` |

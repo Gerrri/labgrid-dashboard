@@ -14,13 +14,10 @@ import os
 import socket
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.config import LABGRID_DASHBOARD_USER
+from app.config import LABGRID_DASHBOARD_USER, get_settings
 from app.models.target import CommandOutput, Resource, Target
 
 logger = logging.getLogger(__name__)
-
-# Constants for command execution
-COMMAND_TIMEOUT = 30  # seconds
 
 # Constants for release retry logic
 RELEASE_MAX_RETRIES = 3
@@ -738,12 +735,14 @@ class LabgridClient:
         )
 
         try:
+            timeout = get_settings().labgrid_command_timeout
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=COMMAND_TIMEOUT
+                proc.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:
             proc.kill()
-            raise TimeoutError(f"Command timeout after {COMMAND_TIMEOUT}s")
+            timeout = get_settings().labgrid_command_timeout
+            raise TimeoutError(f"Command timeout after {timeout}s")
 
         if proc.returncode != 0:
             error = stderr.decode("utf-8", errors="replace")
