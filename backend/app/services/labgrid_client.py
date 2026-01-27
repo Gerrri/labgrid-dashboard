@@ -327,14 +327,25 @@ class LabgridClient:
                 resources_list = []
                 ip_address = None
                 acquired_by = None
+                place_acquired_flag = False
+                has_acquired_resource = False
                 is_available = True
+
+                place_info = self._places_cache.get(exporter_name, {})
+                place_acquired = place_info.get("acquired")
+                if isinstance(place_acquired, str):
+                    place_acquired = place_acquired.strip()
+                if place_acquired:
+                    place_acquired_flag = True
+                    if isinstance(place_acquired, str):
+                        acquired_by = place_acquired
 
                 for res_type, res_data in exporter_resources.items():
                     params = res_data.get("params", {})
 
                     # Track acquired status
                     if res_data.get("acquired"):
-                        acquired_by = res_data.get("acquired")
+                        has_acquired_resource = True
 
                     # Track availability
                     if not res_data.get("avail", True):
@@ -365,10 +376,13 @@ class LabgridClient:
                 # Determine status based on availability and acquisition
                 if not is_available:
                     status = "offline"
-                elif acquired_by:
+                elif place_acquired_flag or has_acquired_resource:
                     status = "acquired"
                 else:
                     status = "available"
+
+                if not acquired_by and (place_acquired_flag or has_acquired_resource):
+                    acquired_by = "N/A"
 
                 target = Target(
                     name=exporter_name,
