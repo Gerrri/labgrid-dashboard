@@ -29,6 +29,7 @@ function App() {
     error,
     refetch,
     updateTargetScheduledOutput,
+    updateTargetFromWebSocket,
   } = usePresetsWithTargets();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
@@ -68,11 +69,13 @@ function App() {
   const handleTargetUpdate = useCallback(
     (updatedTarget: Target) => {
       console.log("Target updated via WebSocket:", updatedTarget.name);
-      // Refetch to get the latest data
-      refetch();
+      const applied = updateTargetFromWebSocket(updatedTarget);
+      if (!applied) {
+        refetch();
+      }
       setLastUpdated(new Date());
     },
-    [refetch],
+    [refetch, updateTargetFromWebSocket],
   );
 
   const handleCommandOutput = useCallback(

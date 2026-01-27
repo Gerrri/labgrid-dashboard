@@ -10,6 +10,7 @@ from typing import Any, Dict
 from app.api.connection_manager import manager
 from app.models.target import CommandOutput, ScheduledCommandOutput
 from app.services.command_service import CommandService
+from app.config import LABGRID_DASHBOARD_USER
 from app.services.labgrid_client import LabgridClient
 from app.services.scheduler_service import SchedulerService
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -135,6 +136,11 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
     )
 
     try:
+        optimistic_target = target.model_dump(mode="json")
+        optimistic_target["status"] = "acquired"
+        optimistic_target["acquired_by"] = LABGRID_DASHBOARD_USER
+        await broadcast_target_update(optimistic_target)
+
         # Execute command through the labgrid client
         result_output, exit_code = await _labgrid_client.execute_command(
             target_name, command.command
@@ -154,6 +160,11 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             timestamp=datetime.now(timezone.utc),
             exit_code=1,
         )
+    finally:
+        if _labgrid_client:
+            updated_target = await _labgrid_client.get_place_info(target_name)
+            if updated_target:
+                await broadcast_target_update(updated_target.model_dump(mode="json"))
 
     # Send output to the requesting client
     await manager.send_to(

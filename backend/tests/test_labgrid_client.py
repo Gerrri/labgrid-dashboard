@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
+from app.models.target import Target
 from app.services.labgrid_client import LabgridClient, LabgridConnectionError
 
 
@@ -222,6 +223,37 @@ class TestLabgridClientWithMockedSession:
         assert places[0].acquired_by == "N/A"
 
     @pytest.mark.asyncio
+    async def test_get_places_with_place_acquired(
+        self, connected_client: LabgridClient
+    ):
+        """Test getting places with place-level acquired state."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            }
+        }
+        connected_client._places_cache = {
+            "exporter-1": {
+                "name": "exporter-1",
+                "acquired": "other-user",
+                "comment": "",
+                "tags": {},
+            }
+        }
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            places = await connected_client.get_places()
+
+        assert len(places) == 1
+        assert places[0].status == "acquired"
+        assert places[0].acquired_by == "other-user"
+
+    @pytest.mark.asyncio
     async def test_get_places_with_offline_resource(
         self, connected_client: LabgridClient
     ):
@@ -256,6 +288,38 @@ class TestLabgridClientWithMockedSession:
 
         result = await connected_client.subscribe_updates(callback)
         assert result is True
+
+    @pytest.mark.asyncio
+    async def test_subscribe_updates_polls_and_emits_updates(
+        self, connected_client: LabgridClient
+    ):
+        """Test that polling emits updates for changed targets."""
+        event = asyncio.Event()
+        target = Target(
+            name="exporter-1",
+            status="acquired",
+            acquired_by="user@host",
+            ip_address=None,
+            resources=[],
+            last_command_outputs=[],
+            scheduled_outputs={},
+        )
+
+        connected_client._poll_interval = 0.01
+
+        async def callback(name, data):
+            event.set()
+            connected_client._connected = False
+
+        with patch.object(
+            connected_client, "get_places", new_callable=AsyncMock
+        ) as mock_get_places:
+            mock_get_places.return_value = [target]
+            result = await connected_client.subscribe_updates(callback)
+            assert result is True
+            await asyncio.wait_for(event.wait(), timeout=0.2)
+
+        await connected_client.disconnect()
 
 
 class TestLabgridClientCommandExecution:

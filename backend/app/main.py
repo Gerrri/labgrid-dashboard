@@ -18,6 +18,7 @@ from app.api.routes.targets import set_preset_service as set_targets_preset_serv
 from app.api.routes.targets import (
     set_scheduler_service as set_targets_scheduler_service,
 )
+from app.api.websocket import broadcast_target_update
 from app.api.websocket import set_command_service as set_ws_command_service
 from app.api.websocket import set_labgrid_client as set_ws_labgrid_client
 from app.api.websocket import set_scheduler_service as set_ws_scheduler_service
@@ -118,6 +119,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     set_ws_labgrid_client(labgrid_client)
     set_ws_command_service(command_service)
     set_ws_scheduler_service(scheduler_service)
+
+    async def handle_target_update(target_name: str, target_data: dict) -> None:
+        await broadcast_target_update(target_data)
+
+    await labgrid_client.subscribe_updates(handle_target_update)
 
     logger.info("Labgrid Dashboard Backend started successfully")
 
