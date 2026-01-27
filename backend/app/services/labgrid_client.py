@@ -9,10 +9,11 @@ Note: Labgrid switched from WAMP to gRPC in version 24.0.
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import socket
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from app.config import LABGRID_DASHBOARD_USER, get_settings
 from app.models.target import CommandOutput, Resource, Target
@@ -67,6 +68,8 @@ class LabgridClient:
         self._places_cache: Dict[str, Dict[str, Any]] = {}
         # Cache of all known exporters (persists offline exporters)
         self._known_exporters_cache: Dict[str, Dict[str, Any]] = {}
+        self._poll_interval = get_settings().labgrid_poll_interval_seconds
+        self._poll_task: Optional[asyncio.Task] = None
 
     @property
     def connected(self) -> bool:
@@ -282,6 +285,12 @@ class LabgridClient:
             except Exception as e:
                 logger.warning(f"Error during disconnect: {e}")
 
+        if self._poll_task:
+            self._poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._poll_task
+            self._poll_task = None
+
         self._session = None
         self._connected = False
         self._resources_cache = {}
@@ -373,6 +382,11 @@ class LabgridClient:
                     ):
                         ip_address = self._resolve_hostname_to_ip(exporter_hostname)
 
+                place_data = self._places_cache.get(exporter_name, {})
+                place_acquired = place_data.get("acquired")
+                if place_acquired:
+                    acquired_by = place_acquired
+
                 # Determine status based on availability and acquisition
                 if not is_available:
                     status = "offline"
@@ -434,10 +448,19 @@ class LabgridClient:
                     if not res_data.get("avail", False):
                         avail = False
 
+                place_data = self._places_cache.get(name, {})
+                place_acquired = place_data.get("acquired")
+                if not avail:
+                    status = "offline"
+                elif place_acquired:
+                    status = "acquired"
+                else:
+                    status = "available"
+
                 return Target(
                     name=name,
-                    status="available" if avail else "offline",
-                    acquired_by=None,
+                    status=status,
+                    acquired_by=place_acquired,
                     resources=resources,
                     tags={},
                 )
@@ -447,7 +470,7 @@ class LabgridClient:
             return None
 
     async def subscribe_updates(
-        self, callback: Callable[[str, Dict[str, Any]], None]
+        self, callback: Callable[[str, Dict[str, Any]], Awaitable[None] | None]
     ) -> bool:
         """Subscribe to real-time place updates.
 
@@ -464,12 +487,46 @@ class LabgridClient:
             logger.warning("Not connected to coordinator")
             return False
 
-        # TODO: Implement gRPC streaming subscription
-        # For now, we use polling via _refresh_cache()
+        if self._poll_task and not self._poll_task.done():
+            return True
+
         logger.info(
             "Subscriptions use polling mode (gRPC streaming not yet implemented)"
         )
+        self._poll_task = asyncio.create_task(self._poll_updates(callback))
         return True
+
+    def _target_snapshot(
+        self, target: Target
+    ) -> Tuple[str, Optional[str], Optional[str]]:
+        return (target.status, target.acquired_by, target.ip_address)
+
+    async def _poll_updates(
+        self, callback: Callable[[str, Dict[str, Any]], Awaitable[None] | None]
+    ) -> None:
+        last_snapshots: Dict[str, Tuple[str, Optional[str], Optional[str]]] = {}
+
+        while self._connected:
+            try:
+                targets = await self.get_places()
+                for target in targets:
+                    snapshot = self._target_snapshot(target)
+                    if last_snapshots.get(target.name) != snapshot:
+                        await self._notify_update(callback, target)
+                        last_snapshots[target.name] = snapshot
+            except Exception as e:
+                logger.warning(f"Failed to poll targets: {e}")
+
+            await asyncio.sleep(self._poll_interval)
+
+    async def _notify_update(
+        self,
+        callback: Callable[[str, Dict[str, Any]], Awaitable[None] | None],
+        target: Target,
+    ) -> None:
+        result = callback(target.name, target.model_dump(mode="json"))
+        if asyncio.iscoroutine(result):
+            await result
 
     async def _get_acquired_by(self, place_name: str) -> Optional[str]:
         """Get the user who has acquired a target.

@@ -6,6 +6,8 @@ import logging
 from datetime import datetime, timezone
 from typing import List
 
+from app.api.websocket import broadcast_target_update
+from app.config import LABGRID_DASHBOARD_USER
 from app.models.responses import (
     CommandExecutionRequest,
     ErrorResponse,
@@ -238,6 +240,11 @@ async def execute_command(
     logger.info(f"Executing command '{command.name}' on target '{name}'")
 
     try:
+        optimistic_target = target.model_dump(mode="json")
+        optimistic_target["status"] = "acquired"
+        optimistic_target["acquired_by"] = LABGRID_DASHBOARD_USER
+        await broadcast_target_update(optimistic_target)
+
         # Execute command through the labgrid client
         result_output, exit_code = await client.execute_command(name, command.command)
 
@@ -255,6 +262,10 @@ async def execute_command(
             timestamp=datetime.now(timezone.utc),
             exit_code=1,
         )
+    finally:
+        updated_target = await client.get_place_info(name)
+        if updated_target:
+            await broadcast_target_update(updated_target.model_dump(mode="json"))
 
     return output
 

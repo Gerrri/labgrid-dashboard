@@ -11,6 +11,7 @@ import "./TargetTable.css";
 interface TargetTableProps {
   targets: Target[];
   loading?: boolean;
+  onCommandStart?: (targetName: string) => void;
   onCommandComplete?: (targetName: string, output: CommandOutput) => void;
   commandOutputs?: Map<string, CommandOutput[]>;
   onCommandOutputsChange?: (
@@ -33,6 +34,7 @@ interface TargetTableProps {
 export function TargetTable({
   targets,
   loading = false,
+  onCommandStart,
   onCommandComplete,
   commandOutputs,
   onCommandOutputsChange,
@@ -138,6 +140,7 @@ export function TargetTable({
                   target={target}
                   expanded={expandedTargets.has(target.name)}
                   onToggleExpand={handleToggleExpand}
+                  onCommandStart={onCommandStart}
                   onCommandComplete={onCommandComplete}
                   commandOutputs={commandOutputs?.get(target.name)}
                   onCommandOutputsChange={onCommandOutputsChange}
