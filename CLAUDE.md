@@ -78,3 +78,5 @@ python -m pytest --cov=app --cov-report=term    # Terminal report
 **Test Locations:**
 - Backend: `backend/tests/`
 - Frontend: `frontend/src/__tests__/` (if applicable)
+
+- **No Co-Author**: Do NOT add "Co-Authored-By: Claude" lines to commit messages
