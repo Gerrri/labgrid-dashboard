@@ -44,6 +44,22 @@ scheduler_service: SchedulerService | None = None
 preset_service: PresetService | None = None
 
 
+async def wait_for_targets_ready(
+    client: LabgridClient, timeout_seconds: int, poll_interval_seconds: int
+) -> bool:
+    """Wait for coordinator targets to be available."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+
+    while True:
+        targets = await client.get_places()
+        if targets:
+            return True
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(poll_interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle - startup and shutdown events.
@@ -89,10 +105,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     await labgrid_client.connect()
 
-    # Wait for coordinator synchronization to complete before starting scheduler
-    # This ensures all targets are known before scheduled commands start executing
     logger.info("Waiting for coordinator synchronization...")
-    await asyncio.sleep(2)
+    targets_ready = await wait_for_targets_ready(
+        labgrid_client,
+        settings.coordinator_timeout,
+        settings.labgrid_poll_interval_seconds,
+    )
+    if targets_ready:
+        logger.info("Coordinator synchronization complete")
+    else:
+        logger.warning(
+            "Coordinator synchronization timed out, starting scheduler anyway"
+        )
 
     # Initialize scheduler service with preset support
     scheduler_service = SchedulerService()
@@ -108,7 +132,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     scheduler_service.set_execute_callback(labgrid_client.execute_command)
     scheduler_service.set_get_targets_callback(labgrid_client.get_places)
     scheduler_service.set_get_target_preset_callback(preset_service.get_target_preset)
-    await scheduler_service.start()
 
     # Set the client and service instances for all modules
     set_health_labgrid_client(labgrid_client)
@@ -119,6 +142,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     set_ws_labgrid_client(labgrid_client)
     set_ws_command_service(command_service)
     set_ws_scheduler_service(scheduler_service)
+
+    await scheduler_service.start()
 
     async def handle_target_update(target_name: str, target_data: dict) -> None:
         await broadcast_target_update(target_data)
