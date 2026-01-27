@@ -98,7 +98,9 @@ class LabgridClient:
                 loop = asyncio.get_event_loop()
 
                 # Create ClientSession with address and loop
-                self._session = ClientSession(self._url, loop)
+                # Using keyword arguments for attrs-generated constructor
+                # type: ignore - Pylance doesn't understand attrs-generated __init__
+                self._session = ClientSession(address=self._url, loop=loop)  # type: ignore
 
                 # Start the session (connects to coordinator)
                 await self._session.start()
