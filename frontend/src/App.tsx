@@ -9,7 +9,12 @@ import {
   RefreshControl,
 } from "./components/common";
 import { api } from "./services/api";
-import type { Target, CommandOutput, HealthResponse } from "./types";
+import type {
+  Target,
+  CommandOutput,
+  HealthResponse,
+  ScheduledCommandOutput,
+} from "./types";
 import "./App.css";
 
 const AUTO_REFRESH_INTERVAL = 30; // seconds
@@ -18,7 +23,13 @@ const AUTO_REFRESH_INTERVAL = 30; // seconds
  * Main application component
  */
 function App() {
-  const { presetGroups, loading, error, refetch } = usePresetsWithTargets();
+  const {
+    presetGroups,
+    loading,
+    error,
+    refetch,
+    updateTargetScheduledOutput,
+  } = usePresetsWithTargets();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -74,12 +85,32 @@ function App() {
   );
 
   const handleScheduledOutput = useCallback(
-    (targetName: string, commandName: string, output: CommandOutput) => {
-      console.log(`Scheduled output for ${targetName} (${commandName}):`, output.output);
-      refetch();
+    (
+      targetName: string,
+      commandName: string,
+      output: ScheduledCommandOutput,
+    ) => {
+      console.log(
+        `Scheduled output for ${targetName} (${commandName}):`,
+        output.output,
+      );
+
+      const applied = updateTargetScheduledOutput(
+        targetName,
+        commandName,
+        output,
+      );
+
+      if (!applied) {
+        console.warn(
+          `Scheduled output received for ${targetName} (${commandName}) but target not in cache, refetching`,
+        );
+        refetch();
+      }
+
       setLastUpdated(new Date());
     },
-    [refetch],
+    [refetch, updateTargetScheduledOutput],
   );
 
   const handleTargetsList = useCallback(

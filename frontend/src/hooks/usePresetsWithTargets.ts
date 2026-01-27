@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import type { Target, PresetDetail, Preset } from "../types";
+import type {
+  Target,
+  PresetDetail,
+  Preset,
+  ScheduledCommandOutput,
+} from "../types";
 import { api } from "../services/api";
 
 /**
@@ -16,6 +21,11 @@ interface UsePresetsWithTargetsResult {
   error: string | null;
   refetch: () => Promise<void>;
   defaultPresetId: string;
+  updateTargetScheduledOutput: (
+    targetName: string,
+    commandName: string,
+    output: ScheduledCommandOutput,
+  ) => boolean;
 }
 
 /**
@@ -129,12 +139,53 @@ export function usePresetsWithTargets(): UsePresetsWithTargetsResult {
     fetchData();
   }, [fetchData]);
 
+  const updateTargetScheduledOutput = useCallback(
+    (
+      targetName: string,
+      commandName: string,
+      output: ScheduledCommandOutput,
+    ) => {
+      let applied = false;
+
+      setPresetGroups((groups) => {
+        const next = groups.map((group) => {
+          const index = group.targets.findIndex(
+            (target) => target.name === targetName,
+          );
+
+          if (index === -1) {
+            return group;
+          }
+
+          applied = true;
+          const updatedTargets = [...group.targets];
+          const target = updatedTargets[index];
+          updatedTargets[index] = {
+            ...target,
+            scheduled_outputs: {
+              ...target.scheduled_outputs,
+              [commandName]: output,
+            },
+          };
+
+          return { ...group, targets: updatedTargets };
+        });
+
+        return applied ? next : groups;
+      });
+
+      return applied;
+    },
+    [],
+  );
+
   return {
     presetGroups,
     loading,
     error,
     refetch: fetchData,
     defaultPresetId,
+    updateTargetScheduledOutput,
   };
 }
 
