@@ -2,38 +2,20 @@ import { useState, useEffect, useCallback } from 'react';
 
 interface RefreshControlProps {
   onRefresh: () => void;
-  lastUpdated: Date | null;
   autoRefreshInterval?: number; // in seconds, 0 to disable
   isRefreshing?: boolean;
 }
 
 /**
- * Refresh control with auto-refresh toggle and last-updated timestamp
+ * Refresh control with auto-refresh toggle
  */
 export function RefreshControl({
   onRefresh,
-  lastUpdated,
   autoRefreshInterval = 30,
   isRefreshing = false,
 }: RefreshControlProps) {
   const [autoRefresh, setAutoRefresh] = useState(autoRefreshInterval > 0);
   const [countdown, setCountdown] = useState(autoRefreshInterval);
-
-  // Format last updated time
-  const formatLastUpdated = (date: Date | null): string => {
-    if (!date) return 'Never';
-    const now = new Date();
-    const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (diffSeconds < 60) {
-      return diffSeconds === 0 ? 'Just now' : `${diffSeconds}s ago`;
-    } else if (diffSeconds < 3600) {
-      const minutes = Math.floor(diffSeconds / 60);
-      return `${minutes}m ago`;
-    } else {
-      return date.toLocaleTimeString();
-    }
-  };
 
   // Trigger refresh when countdown reaches 0
   useEffect(() => {
@@ -94,17 +76,6 @@ export function RefreshControl({
 
   return (
     <div className="refresh-control">
-      <div className="refresh-info">
-        <span className="last-updated" title={lastUpdated?.toLocaleString()}>
-          Updated: {formatLastUpdated(lastUpdated)}
-        </span>
-        {autoRefresh && autoRefreshInterval > 0 && (
-          <span className="auto-refresh-countdown" title="Next auto-refresh">
-            ({countdown}s)
-          </span>
-        )}
-      </div>
-
       <div className="refresh-actions">
         <label className="auto-refresh-toggle" title="Toggle auto-refresh">
           <input
@@ -113,7 +84,7 @@ export function RefreshControl({
             onChange={handleToggleAutoRefresh}
             disabled={autoRefreshInterval <= 0}
           />
-          <span className="toggle-label">Auto</span>
+          <span className="toggle-label">Auto refresh</span>
         </label>
 
         <button

@@ -32,7 +32,6 @@ function App() {
     updateTargetFromWebSocket,
     setTargetStatus,
   } = usePresetsWithTargets();
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
 
@@ -60,13 +59,6 @@ function App() {
     fetchHealth();
   }, []);
 
-  // Update lastUpdated when targets are fetched
-  useEffect(() => {
-    if (!loading && totalTargets > 0) {
-      setLastUpdated(new Date());
-    }
-  }, [loading, totalTargets]);
-
   const handleTargetUpdate = useCallback(
     (updatedTarget: Target) => {
       console.log("Target updated via WebSocket:", updatedTarget.name);
@@ -74,7 +66,6 @@ function App() {
       if (!applied) {
         refetch();
       }
-      setLastUpdated(new Date());
     },
     [refetch, updateTargetFromWebSocket],
   );
@@ -88,7 +79,6 @@ function App() {
         next.set(targetName, [output, ...existing]);
         return next;
       });
-      setLastUpdated(new Date());
     },
     [],
   );
@@ -99,7 +89,6 @@ function App() {
       if (!applied) {
         refetch();
       }
-      setLastUpdated(new Date());
     },
     [refetch, setTargetStatus],
   );
@@ -127,8 +116,6 @@ function App() {
         );
         refetch();
       }
-
-      setLastUpdated(new Date());
     },
     [refetch, updateTargetScheduledOutput],
   );
@@ -137,7 +124,6 @@ function App() {
     (targetsList: Target[]) => {
       console.log("Received targets list via WebSocket:", targetsList.length);
       refetch();
-      setLastUpdated(new Date());
     },
     [refetch],
   );
@@ -177,7 +163,6 @@ function App() {
       if (!applied) {
         refetch();
       }
-      setLastUpdated(new Date());
     },
     [refetch, setTargetStatus],
   );
@@ -223,7 +208,6 @@ function App() {
           />
           <RefreshControl
             onRefresh={handleRefresh}
-            lastUpdated={lastUpdated}
             autoRefreshInterval={AUTO_REFRESH_INTERVAL}
             isRefreshing={loading}
           />

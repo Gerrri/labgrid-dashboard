@@ -31,8 +31,12 @@ export function CommandButton({
     >
       {isExecuting ? (
         <>
-          <span className="spinner" aria-hidden="true">⟳</span>
-          <span>Running...</span>
+          <span className="loading-dots" aria-hidden="true">
+            <span className="dot"></span>
+            <span className="dot"></span>
+            <span className="dot"></span>
+          </span>
+          <span>Running</span>
         </>
       ) : (
         <>
