@@ -91,11 +91,14 @@ describe('App', () => {
     });
   });
 
-  it('shows loading spinner initially', () => {
+  it('shows loading spinner initially', async () => {
     render(<App />);
 
     // The loading spinner should be present initially
     expect(screen.getByText('Loading targets...')).toBeInTheDocument();
+
+    // Let async effects settle to avoid act warnings
+    await screen.findByText('test-dut-1');
   });
 
   it('displays targets after loading', async () => {
