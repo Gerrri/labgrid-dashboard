@@ -47,7 +47,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
   }, []);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
 
@@ -66,7 +66,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
 
       ws.onmessage = (event) => {
         try {
-          const message: WSMessage = JSON.parse(event.data);
+          const message = event.data as unknown as WSMessage;
 
           switch (message.type) {
             case 'target_update':
