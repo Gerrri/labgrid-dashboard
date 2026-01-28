@@ -31,13 +31,12 @@ export const api = {
   /**
    * Get all targets with their current status
    */
-  getTargets: () => axiosInstance.get<TargetsResponse>("/api/targets"),
+  getTargets: () => axiosInstance.get<any>("/api/targets"),
 
   /**
    * Get a single target by name
    */
-  getTarget: (name: string) =>
-    axiosInstance.get<Target>(`/api/targets/${encodeURIComponent(name)}`),
+  getTarget: (name: string) => axiosInstance.get<Target>(`/api/targets/${name}`),
 
   /**
    * Get available commands for a target
@@ -50,11 +49,13 @@ export const api = {
   /**
    * Execute a command on a target
    */
-  executeCommand: (targetName: string, commandName: string) =>
-    axiosInstance.post<CommandOutput>(
+  executeCommand: (targetName: string, commandName: string) => {
+    console.log("Executing command", targetName, commandName);
+    return axiosInstance.post<CommandOutput>(
       `/api/targets/${encodeURIComponent(targetName)}/command`,
       { command_name: commandName },
-    ),
+    );
+  },
 
   /**
    * Check backend health status
