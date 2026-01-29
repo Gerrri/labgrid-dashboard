@@ -46,6 +46,38 @@ Labgrid Dashboard provides a real-time web interface to:
 - Node.js 20+ (for local development)
 - Python 3.11+ (for local development)
 
+## Production Deployment
+
+**Pre-built Docker images are available on GitHub Container Registry:**
+
+```bash
+# Pull the latest version
+docker pull ghcr.io/gerrri/labgrid-dashboard:latest
+
+# Or pin to a specific version
+docker pull ghcr.io/gerrri/labgrid-dashboard:1.0.0
+```
+
+**Quick Start:**
+
+```bash
+docker run -d \
+  --name labgrid-dashboard \
+  -p 80:80 \
+  -e COORDINATOR_URL=ws://your-coordinator:20408/ws \
+  -e CORS_ORIGINS=http://your-domain.com \
+  ghcr.io/gerrri/labgrid-dashboard:latest
+```
+
+**For complete production deployment instructions, including:**
+- Docker Compose configuration
+- Environment variables reference
+- Reverse proxy setup (nginx, traefik)
+- Health monitoring
+- Troubleshooting
+
+See the [Production Deployment Guide](docs/DEPLOYMENT.md).
+
 ## Deployment Modes
 
 ### Development Mode (Default)
