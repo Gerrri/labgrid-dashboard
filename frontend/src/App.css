@@ -289,19 +289,42 @@
   font-weight: 500;
 }
 
-.coordinator-status {
+/* Connection Indicators */
+.connection-indicators {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 1.5rem;
 }
 
-.status-ok {
-  color: #22c55e;
-  font-weight: 500;
+.connection-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  transition: opacity 0.2s ease;
 }
 
-.status-error {
-  color: #ef4444;
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: background-color 0.2s ease;
+}
+
+.connection-indicator.connected .status-dot {
+  background-color: #22c55e;
+}
+
+.connection-indicator.disconnected .status-dot {
+  background-color: #ef4444;
+}
+
+.connection-indicator.reconnecting .status-dot {
+  background-color: #f59e0b;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.connection-label {
   font-weight: 500;
 }
 
@@ -369,5 +392,17 @@
 
   .btn-retry:hover {
     background: #ef4444;
+  }
+
+  .connection-indicator.connected .status-dot {
+    background-color: #4ade80;
+  }
+
+  .connection-indicator.disconnected .status-dot {
+    background-color: #f87171;
+  }
+
+  .connection-indicator.reconnecting .status-dot {
+    background-color: #fbbf24;
   }
 }

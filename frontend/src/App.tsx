@@ -5,7 +5,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import {
   LoadingSpinner,
   ErrorMessage,
-  ConnectionStatus,
+  ConnectionIndicators,
 } from "./components/common";
 import { api } from "./services/api";
 import type {
@@ -198,12 +198,6 @@ function App() {
         <div className="header-title">
           <h1>Labgrid Dashboard</h1>
         </div>
-        <div className="header-status">
-          <ConnectionStatus
-            isConnected={connected}
-            isReconnecting={isReconnecting}
-          />
-        </div>
       </header>
 
       <main className="app-main">
@@ -250,16 +244,11 @@ function App() {
           <span className="target-count">
             {totalTargets} target{totalTargets !== 1 ? "s" : ""} found
           </span>
-          {healthInfo && (
-            <span className="coordinator-status">
-              Coordinator:{" "}
-              {healthInfo.coordinator_connected ? (
-                <span className="status-ok">Connected</span>
-              ) : (
-                <span className="status-error">Disconnected</span>
-              )}
-            </span>
-          )}
+          <ConnectionIndicators
+            websocketConnected={connected}
+            coordinatorConnected={healthInfo?.coordinator_connected ?? false}
+            isReconnecting={isReconnecting}
+          />
         </div>
       </footer>
     </div>
