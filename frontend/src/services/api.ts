@@ -11,7 +11,18 @@ import type {
   TargetPresetResponse,
 } from "../types";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Runtime environment configuration (injected by entrypoint.sh in production)
+// In production with nginx proxy, use relative URL "/api"
+declare global {
+  interface Window {
+    ENV?: {
+      API_URL: string;
+      WS_URL: string;
+    };
+  }
+}
+
+const API_BASE = window.ENV?.API_URL || import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 /**
  * Axios instance with base configuration

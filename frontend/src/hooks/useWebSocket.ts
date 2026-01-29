@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { WSMessage, Target, CommandOutput } from '../types';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/api/ws';
+// Support both relative URLs (production with nginx) and absolute URLs (development)
+const WS_URL = window.ENV?.WS_URL || import.meta.env.VITE_WS_URL || 'ws://localhost:8000/api/ws';
 const RECONNECT_INTERVAL = 5000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 

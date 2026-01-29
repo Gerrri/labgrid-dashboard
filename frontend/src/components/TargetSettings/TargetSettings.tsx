@@ -3,7 +3,6 @@ import type {
   Preset,
   PresetsResponse,
   PresetDetail,
-  Command,
 } from "../../types";
 import { api } from "../../services/api";
 import "./TargetSettings.css";

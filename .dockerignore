@@ -1,0 +1,56 @@
+# Git
+.git
+.github
+.gitignore
+
+# Environment files
+.env
+.env.*
+
+# Documentation
+*.md
+README.md
+CHANGELOG.md
+CLAUDE.md
+AGENTS.md
+
+# IDE
+.vscode
+.idea
+.devcontainer
+
+# Node
+node_modules
+frontend/dist
+frontend/node_modules
+
+# Python
+backend/__pycache__
+backend/.pytest_cache
+backend/htmlcov
+backend/test_*.py
+backend/tests
+backend/.venv
+backend/venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose*.yml
+Dockerfile.dev
+.dockerignore
+
+# Scripts and docs
+scripts
+docs
+agent-rules

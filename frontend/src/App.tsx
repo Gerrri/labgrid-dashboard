@@ -94,17 +94,25 @@ function App() {
     (
       targetName: string,
       commandName: string,
-      output: ScheduledCommandOutput,
+      output: CommandOutput,
     ) => {
       console.log(
         `Scheduled output for ${targetName} (${commandName}):`,
         output.output,
       );
 
+      // Convert CommandOutput to ScheduledCommandOutput format
+      const scheduledOutput: ScheduledCommandOutput = {
+        command_name: commandName,
+        output: output.output,
+        timestamp: output.timestamp,
+        exit_code: output.exit_code,
+      };
+
       const applied = updateTargetScheduledOutput(
         targetName,
         commandName,
-        output,
+        scheduledOutput,
       );
 
       if (!applied) {
