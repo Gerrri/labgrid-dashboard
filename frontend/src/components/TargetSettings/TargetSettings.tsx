@@ -5,6 +5,7 @@ import type {
   PresetDetail,
 } from "../../types";
 import { api } from "../../services/api";
+import { loadPresetDetails } from "../../utils/presetCache";
 import "./TargetSettings.css";
 
 interface TargetSettingsProps {
@@ -54,16 +55,8 @@ export function TargetSettings({
         setCurrentPresetId(currentPreset);
         setSelectedPresetId(currentPreset);
 
-        // Fetch details for all presets (including commands)
-        const detailsPromises = presetsData.presets.map((p) =>
-          api.getPresetDetail(p.id),
-        );
-        const detailsResponses = await Promise.all(detailsPromises);
-
-        const detailsMap = new Map<string, PresetDetail>();
-        detailsResponses.forEach((response) => {
-          detailsMap.set(response.data.id, response.data);
-        });
+        // Fetch details for all presets (using cache to avoid duplicate fetches)
+        const detailsMap = await loadPresetDetails(presetsData.presets);
         setPresetDetails(detailsMap);
       } catch (err) {
         const message =
