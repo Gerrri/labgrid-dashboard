@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { Target, CommandOutput, ScheduledCommand } from "../../types";
 import { StatusBadge } from "./StatusBadge";
