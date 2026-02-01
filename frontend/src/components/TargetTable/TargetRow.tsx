@@ -112,10 +112,23 @@ export function TargetRow({
       return <span className="text-muted">-</span>;
     }
 
-    if (target.web_url) {
+    // Validate URL to prevent XSS via javascript:/data: protocols
+    const safeUrl = (() => {
+      if (!target.web_url) return null;
+      try {
+        const url = new URL(target.web_url, window.location.origin);
+        return url.protocol === "http:" || url.protocol === "https:"
+          ? url.toString()
+          : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (safeUrl) {
       return (
         <a
-          href={target.web_url}
+          href={safeUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="ip-link"
