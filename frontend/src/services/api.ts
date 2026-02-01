@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type AxiosRequestConfig } from "axios";
 import type {
   Target,
   TargetsResponse,
@@ -53,9 +53,10 @@ export const api = {
   /**
    * Get available commands for a target
    */
-  getCommands: (name: string) =>
+  getCommands: (name: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<Command[]>(
       `/api/targets/${encodeURIComponent(name)}/commands`,
+      config,
     ),
 
   /**
