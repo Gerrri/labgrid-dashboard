@@ -91,9 +91,12 @@ export function CommandPanel({
         const response = await api.executeCommand(targetName, commandName);
         const newOutput = response.data;
 
-        const newOutputs = [newOutput, ...outputs];
-        setOutputs(newOutputs);
-        onOutputsChange?.(newOutputs);
+        // Use functional state update to avoid race conditions with stale closures
+        setOutputs((prev) => {
+          const next = [newOutput, ...prev];
+          onOutputsChange?.(next);
+          return next;
+        });
         onCommandComplete?.(newOutput);
       } catch (err) {
         const message =
@@ -104,7 +107,7 @@ export function CommandPanel({
         setExecutingCommand(null);
       }
     },
-    [targetName, outputs, onCommandComplete, onOutputsChange, onCommandStart],
+    [targetName, onCommandComplete, onOutputsChange, onCommandStart],
   );
 
   const handleClearOutput = () => {
