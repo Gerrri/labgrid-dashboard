@@ -14,10 +14,12 @@ const presetDetailCache = new Map<string, PresetDetail>();
  * Only fetches missing presets from the API.
  *
  * @param presets - List of presets to load details for
+ * @param signal - Optional AbortSignal for cancellation
  * @returns Map of preset ID to preset detail
  */
 export const loadPresetDetails = async (
-  presets: Preset[]
+  presets: Preset[],
+  signal?: AbortSignal
 ): Promise<Map<string, PresetDetail>> => {
   // Identify presets not in cache
   const missing = presets.filter((p) => !presetDetailCache.has(p.id));
@@ -25,7 +27,7 @@ export const loadPresetDetails = async (
   // Fetch missing presets in parallel
   if (missing.length > 0) {
     const responses = await Promise.all(
-      missing.map((p) => api.getPresetDetail(p.id))
+      missing.map((p) => api.getPresetDetail(p.id, { signal }))
     );
 
     // Update cache

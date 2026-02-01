@@ -36,6 +36,8 @@ export function TargetSettings({
 
   // Fetch presets and current target preset
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -43,8 +45,8 @@ export function TargetSettings({
 
         // Fetch all presets and current target preset in parallel
         const [presetsResponse, targetPresetResponse] = await Promise.all([
-          api.getPresets(),
-          api.getTargetPreset(targetName),
+          api.getPresets({ signal: controller.signal }),
+          api.getTargetPreset(targetName, { signal: controller.signal }),
         ]);
 
         const presetsData: PresetsResponse = presetsResponse.data;
@@ -56,19 +58,29 @@ export function TargetSettings({
         setSelectedPresetId(currentPreset);
 
         // Fetch details for all presets (using cache to avoid duplicate fetches)
-        const detailsMap = await loadPresetDetails(presetsData.presets);
+        const detailsMap = await loadPresetDetails(
+          presetsData.presets,
+          controller.signal
+        );
         setPresetDetails(detailsMap);
       } catch (err) {
+        // Don't set error state if request was aborted
+        if (controller.signal.aborted) return;
         const message =
           err instanceof Error ? err.message : "Failed to load settings";
         setError(message);
         console.error("Error fetching target settings:", err);
       } finally {
-        setLoading(false);
+        // Don't update loading state if component unmounted
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchData();
+
+    return () => controller.abort();
   }, [targetName]);
 
   const handlePresetSelect = useCallback((presetId: string) => {

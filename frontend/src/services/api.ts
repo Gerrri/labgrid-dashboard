@@ -84,22 +84,25 @@ export const api = {
   /**
    * Get all available presets
    */
-  getPresets: () => axiosInstance.get<PresetsResponse>("/api/presets"),
+  getPresets: (config?: AxiosRequestConfig) =>
+    axiosInstance.get<PresetsResponse>("/api/presets", config),
 
   /**
    * Get detailed information about a preset including its commands
    */
-  getPresetDetail: (presetId: string) =>
+  getPresetDetail: (presetId: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<PresetDetail>(
       `/api/presets/${encodeURIComponent(presetId)}`,
+      config,
     ),
 
   /**
    * Get the current preset for a target
    */
-  getTargetPreset: (targetName: string) =>
+  getTargetPreset: (targetName: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<TargetPresetResponse>(
       `/api/targets/${encodeURIComponent(targetName)}/preset`,
+      config,
     ),
 
   /**
