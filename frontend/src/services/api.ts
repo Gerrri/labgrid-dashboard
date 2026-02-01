@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type AxiosRequestConfig } from "axios";
 import type {
   Target,
   TargetsResponse,
@@ -11,7 +11,18 @@ import type {
   TargetPresetResponse,
 } from "../types";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Runtime environment configuration (injected by entrypoint.sh in production)
+// In production with nginx proxy, use relative URL "/api"
+declare global {
+  interface Window {
+    ENV?: {
+      API_URL: string;
+      WS_URL: string;
+    };
+  }
+}
+
+const API_BASE = window.ENV?.API_URL || import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 /**
  * Axios instance with base configuration
@@ -31,7 +42,8 @@ export const api = {
   /**
    * Get all targets with their current status
    */
-  getTargets: () => axiosInstance.get<TargetsResponse>("/api/targets"),
+  getTargets: (config?: AxiosRequestConfig) =>
+    axiosInstance.get<TargetsResponse>("/api/targets", config),
 
   /**
    * Get a single target by name
@@ -42,9 +54,10 @@ export const api = {
   /**
    * Get available commands for a target
    */
-  getCommands: (name: string) =>
+  getCommands: (name: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<Command[]>(
       `/api/targets/${encodeURIComponent(name)}/commands`,
+      config,
     ),
 
   /**
@@ -72,22 +85,25 @@ export const api = {
   /**
    * Get all available presets
    */
-  getPresets: () => axiosInstance.get<PresetsResponse>("/api/presets"),
+  getPresets: (config?: AxiosRequestConfig) =>
+    axiosInstance.get<PresetsResponse>("/api/presets", config),
 
   /**
    * Get detailed information about a preset including its commands
    */
-  getPresetDetail: (presetId: string) =>
+  getPresetDetail: (presetId: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<PresetDetail>(
       `/api/presets/${encodeURIComponent(presetId)}`,
+      config,
     ),
 
   /**
    * Get the current preset for a target
    */
-  getTargetPreset: (targetName: string) =>
+  getTargetPreset: (targetName: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<TargetPresetResponse>(
       `/api/targets/${encodeURIComponent(targetName)}/preset`,
+      config,
     ),
 
   /**

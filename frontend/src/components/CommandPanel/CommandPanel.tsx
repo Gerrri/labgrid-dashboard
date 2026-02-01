@@ -42,23 +42,34 @@ export function CommandPanel({
 
   // Fetch available commands for the target
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchCommands = async () => {
       try {
         setLoadingCommands(true);
         setError(null);
-        const response = await api.getCommands(targetName);
+        const response = await api.getCommands(targetName, {
+          signal: controller.signal,
+        });
         setCommands(response.data);
       } catch (err) {
+        // Don't set error state if request was aborted
+        if (controller.signal.aborted) return;
         const message =
           err instanceof Error ? err.message : "Failed to load commands";
         setError(message);
         console.error("Error fetching commands:", err);
       } finally {
-        setLoadingCommands(false);
+        // Don't update loading state if component unmounted
+        if (!controller.signal.aborted) {
+          setLoadingCommands(false);
+        }
       }
     };
 
     fetchCommands();
+
+    return () => controller.abort();
   }, [targetName]);
 
   // Only update from initialOutputs on first mount and if no persisted outputs
@@ -91,9 +102,12 @@ export function CommandPanel({
         const response = await api.executeCommand(targetName, commandName);
         const newOutput = response.data;
 
-        const newOutputs = [newOutput, ...outputs];
-        setOutputs(newOutputs);
-        onOutputsChange?.(newOutputs);
+        // Use functional state update to avoid race conditions with stale closures
+        setOutputs((prev) => {
+          const next = [newOutput, ...prev];
+          onOutputsChange?.(next);
+          return next;
+        });
         onCommandComplete?.(newOutput);
       } catch (err) {
         const message =
@@ -104,7 +118,7 @@ export function CommandPanel({
         setExecutingCommand(null);
       }
     },
-    [targetName, outputs, onCommandComplete, onOutputsChange, onCommandStart],
+    [targetName, onCommandComplete, onOutputsChange, onCommandStart],
   );
 
   const handleClearOutput = () => {

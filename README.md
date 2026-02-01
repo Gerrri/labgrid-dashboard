@@ -46,14 +46,116 @@ Labgrid Dashboard provides a real-time web interface to:
 - Node.js 20+ (for local development)
 - Python 3.11+ (for local development)
 
-## Deployment Modes
+## Production Deployment (GHCR Release Image)
+
+> **⚠️ Important**: The production GHCR image is a **single combined container** running nginx + backend on **port 80**, not port 8000. It uses **runtime environment variables**, not `VITE_*` build-time variables.
+
+### Using the Pre-built GHCR Image
+
+**Pull from GitHub Container Registry:**
+
+```bash
+# Pull the latest version
+docker pull ghcr.io/gerrri/labgrid-dashboard:latest
+
+# Or pin to a specific version (recommended for production)
+docker pull ghcr.io/gerrri/labgrid-dashboard:1.0.0
+```
+
+### Quick Start
+
+```bash
+docker run -d \
+  --name labgrid-dashboard \
+  -p 80:80 \
+  -e COORDINATOR_URL=ws://your-coordinator:20408/ws \
+  ghcr.io/gerrri/labgrid-dashboard:latest
+```
+
+**Access**: http://localhost
+
+### Production Image Architecture
+
+```
+┌─────────────────────────────────┐
+│  Container (Port 80)            │
+│                                 │
+│  ┌──────────────────────────┐  │
+│  │ Nginx (Port 80)          │  │
+│  │ - Serves frontend        │  │
+│  │ - Proxies /api → :8000   │  │
+│  └──────────┬───────────────┘  │
+│             │                   │
+│  ┌──────────▼───────────────┐  │
+│  │ FastAPI (Port 8000)      │  │
+│  │ - Internal only          │  │
+│  └──────────────────────────┘  │
+│                                 │
+│  Managed by Supervisord         │
+└─────────────────────────────────┘
+```
+
+### Key Differences: Production vs Development
+
+| Aspect | Production (GHCR) | Development (docker-compose) |
+|--------|------------------|------------------------------|
+| **Port** | `80` (nginx) | `3000` (frontend), `8000` (backend) |
+| **Architecture** | Combined (nginx + backend) | Separate containers |
+| **Environment Variables** | Runtime (`COORDINATOR_URL`) | Build-time (`VITE_*`) + Runtime |
+| **Frontend Config** | Injected via `entrypoint.sh` | Build-time in Vite |
+| **Use Case** | Production deployment | Local development |
+
+### Production Environment Variables
+
+The GHCR image uses **runtime configuration** (not build-time):
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `COORDINATOR_URL` | **Yes** | - | Labgrid coordinator URL (e.g., `ws://coordinator:20408/ws`) |
+| `CORS_ORIGINS` | No | `http://localhost` | Comma-separated allowed origins |
+| `WS_URL_EXTERNAL` | No | `/api/ws` | External WebSocket URL (for reverse proxy scenarios) |
+| `DEBUG` | No | `false` | Enable debug logging |
+
+**Note**: `VITE_*` variables are **not used** in the production image. Configuration is injected at runtime via `/env-config.js`.
+
+### Example: Production with Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  labgrid-dashboard:
+    image: ghcr.io/gerrri/labgrid-dashboard:latest
+    ports:
+      - "80:80"  # Note: Port 80, not 8000!
+    environment:
+      - COORDINATOR_URL=ws://coordinator:20408/ws
+      - CORS_ORIGINS=http://localhost,https://dashboard.example.com
+    volumes:
+      - ./commands.yaml:/app/commands.yaml:ro
+      - ./target_presets.json:/app/target_presets.json:ro
+    restart: unless-stopped
+```
+
+### Complete Documentation
+
+For detailed production deployment including reverse proxy setup, health monitoring, and troubleshooting:
+
+**→ [Production Deployment Guide](docs/DEPLOYMENT.md)**
+
+## Development & Testing Modes
+
+> **Note**: These modes are for **local development and testing only**. For production, use the [GHCR release image](#production-deployment-ghcr-release-image) above.
 
 ### Development Mode (Default)
-Starts the full stack (Coordinator, Backend, Frontend) for local development.
+Starts the full stack (Coordinator, Backend, Frontend) for local development with separate containers.
 
 ```bash
 docker compose up -d
 ```
+
+**Ports**:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
 
 ### Staging Mode
 Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands are executed via `labgrid-client` CLI, which properly routes through: Backend → Coordinator → Exporter → DUT.
@@ -62,6 +164,8 @@ Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. C
 # Start with real command execution
 docker compose --profile staging up -d --build
 ```
+
+**Ports**: Same as development mode
 
 **Auto-Acquire Feature:**
 When starting in staging mode, an init-container automatically:
@@ -245,14 +349,16 @@ See `.env.example` for the full list of available configuration options.
 | `DEBUG` | Enable debug mode | `false` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:3000,http://localhost:5173` |
 
-#### Frontend Configuration
+#### Frontend Configuration (Development Only)
+
+> **⚠️ Note**: These `VITE_*` variables are **only used in development mode**. The production GHCR image uses runtime configuration via `entrypoint.sh` and does not use these variables.
 
 See `frontend/.env.example` for frontend-specific variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VITE_API_URL` | Backend API URL | `http://localhost:8000` |
-| `VITE_WS_URL` | Backend WebSocket URL | `ws://localhost:8000/api/ws` |
+| `VITE_API_URL` | Backend API URL (dev only) | `http://localhost:8000` |
+| `VITE_WS_URL` | Backend WebSocket URL (dev only) | `ws://localhost:8000/api/ws` |
 
 #### Labgrid CLI Variables (used by init-acquire container)
 

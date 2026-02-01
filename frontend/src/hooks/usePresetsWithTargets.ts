@@ -44,15 +44,15 @@ export function usePresetsWithTargets(): UsePresetsWithTargetsResult {
   const [error, setError] = useState<string | null>(null);
   const [defaultPresetId, setDefaultPresetId] = useState<string>("basic");
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
       setError(null);
 
       // Fetch all data in parallel
       const [targetsResponse, presetsResponse] = await Promise.all([
-        api.getTargets(),
-        api.getPresets(),
+        api.getTargets({ signal }),
+        api.getPresets({ signal }),
       ]);
 
       const targets = targetsResponse.data.targets;
@@ -64,7 +64,7 @@ export function usePresetsWithTargets(): UsePresetsWithTargetsResult {
       const presetAssignments = await Promise.all(
         targets.map(async (target) => {
           try {
-            const response = await api.getTargetPreset(target.name);
+            const response = await api.getTargetPreset(target.name, { signal });
             return {
               targetName: target.name,
               presetId: response.data.preset_id,
@@ -87,9 +87,11 @@ export function usePresetsWithTargets(): UsePresetsWithTargetsResult {
       await Promise.all(
         presets.map(async (preset: Preset) => {
           try {
-            const response = await api.getPresetDetail(preset.id);
+            const response = await api.getPresetDetail(preset.id, { signal });
             presetDetailsMap.set(preset.id, response.data);
           } catch (err) {
+            // Don't log errors if request was aborted
+            if (signal?.aborted) return;
             console.error(
               `Failed to fetch details for preset ${preset.id}:`,
               err,
@@ -132,17 +134,24 @@ export function usePresetsWithTargets(): UsePresetsWithTargetsResult {
 
       setPresetGroups(groups);
     } catch (err) {
+      // Don't set error state if request was aborted
+      if (signal?.aborted) return;
       const errorMessage =
         err instanceof Error ? err.message : "Failed to fetch data";
       setError(errorMessage);
       console.error("Error fetching presets with targets:", err);
     } finally {
-      setLoading(false);
+      // Don't update loading state if request was aborted
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, [fetchData]);
 
   const updateTargetScheduledOutput = useCallback(

@@ -25,7 +25,7 @@ export function OutputViewer({ outputs, maxHeight = '300px' }: OutputViewerProps
   return (
     <div className="output-viewer" style={{ maxHeight }}>
       {outputs.map((output, index) => (
-        <div key={`${output.timestamp}-${index}`} className="output-entry">
+        <div key={`${output.command}-${output.timestamp}-${output.exit_code}-${index}`} className="output-entry">
           <div className="output-header">
             <code className="output-command">$ {output.command}</code>
             <div className="output-meta">

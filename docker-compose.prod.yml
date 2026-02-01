@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  labgrid-dashboard:
+    image: ghcr.io/gerrri/labgrid-dashboard:latest
+    container_name: labgrid-dashboard
+    restart: unless-stopped
+
+    ports:
+      - "80:80"  # Change to 8080:80 if port 80 is already in use
+
+    environment:
+      # Required: Labgrid coordinator connection
+      - COORDINATOR_URL=${COORDINATOR_URL}
+
+      # Optional: CORS configuration
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost}
+
+      # Optional: Coordinator settings
+      - COORDINATOR_REALM=${COORDINATOR_REALM:-realm1}
+      - COORDINATOR_TIMEOUT=${COORDINATOR_TIMEOUT:-30}
+
+      # Optional: Command execution settings
+      - LABGRID_COMMAND_TIMEOUT=${LABGRID_COMMAND_TIMEOUT:-30}
+      - LABGRID_POLL_INTERVAL_SECONDS=${LABGRID_POLL_INTERVAL_SECONDS:-5}
+
+      # Optional: Configuration file paths
+      - COMMANDS_FILE=${COMMANDS_FILE:-/app/commands.yaml}
+      - PRESETS_FILE=${PRESETS_FILE:-/app/target_presets.json}
+
+      # Optional: Debug logging
+      - DEBUG=${DEBUG:-false}
+
+      # Optional: External WebSocket URL (for reverse proxy scenarios)
+      # - WS_URL_EXTERNAL=/api/ws
+
+    volumes:
+      # Mount configuration files (customize paths as needed)
+      - ./backend/commands.yaml:/app/commands.yaml:ro
+      - ./backend/target_presets.json:/app/target_presets.json:ro
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    networks:
+      - labgrid-network
+
+networks:
+  labgrid-network:
+    # Use 'external: true' if connecting to an existing coordinator network
+    # external: true
+    # name: your-existing-network-name
+    driver: bridge
