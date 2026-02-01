@@ -42,7 +42,8 @@ export const api = {
   /**
    * Get all targets with their current status
    */
-  getTargets: () => axiosInstance.get<TargetsResponse>("/api/targets"),
+  getTargets: (config?: AxiosRequestConfig) =>
+    axiosInstance.get<TargetsResponse>("/api/targets", config),
 
   /**
    * Get a single target by name
