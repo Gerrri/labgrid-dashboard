@@ -2,15 +2,54 @@
 
 This guide covers deploying the Labgrid Dashboard to production using the pre-built Docker image from GitHub Container Registry (GHCR).
 
+## ⚠️ Important: Production Image Architecture
+
+**The GHCR release image is fundamentally different from the development setup:**
+
+| Aspect | Production (GHCR) | Development (docker-compose) |
+|--------|------------------|------------------------------|
+| **Container** | Single combined container | Separate frontend + backend containers |
+| **Port** | `80` (nginx) | `3000` (frontend) + `8000` (backend) |
+| **Web Server** | Nginx (serves frontend + proxies API) | Vite dev server + Uvicorn |
+| **Environment Config** | **Runtime** via `entrypoint.sh` | **Build-time** via `VITE_*` variables |
+| **Access** | `http://localhost` | `http://localhost:3000` |
+
+**Key Points:**
+- ✅ Map to port **80**, not 8000
+- ✅ Use **runtime** environment variables (`COORDINATOR_URL`, `WS_URL_EXTERNAL`)
+- ❌ Do NOT use `VITE_*` variables (they are ignored in production)
+- ✅ Backend runs internally on port 8000, but is **not exposed** directly
+
 ## Overview
 
 The Labgrid Dashboard is distributed as a single production-ready Docker image that combines:
-- **Frontend** - React/Vite application served by nginx
-- **Backend** - FastAPI application running on uvicorn
-- **Nginx** - Web server that serves frontend static files and proxies API requests to the backend
+- **Nginx (Port 80)** - Web server that serves frontend static files and proxies `/api` requests to the backend
+- **FastAPI Backend (Port 8000)** - Internal only, accessed via nginx proxy
 - **Supervisord** - Process manager that runs both nginx and uvicorn
 
 The image is published to: `ghcr.io/gerrri/labgrid-dashboard`
+
+**Container Architecture:**
+```
+┌─────────────────────────────────────┐
+│  Container (Expose: 80)             │
+│                                     │
+│  ┌──────────────────────────────┐  │
+│  │  Nginx (0.0.0.0:80)          │  │
+│  │  - GET  /       → static     │  │
+│  │  - GET  /api/*  → :8000      │  │
+│  │  - WS   /api/ws → :8000      │  │
+│  └──────────┬───────────────────┘  │
+│             │ proxy_pass            │
+│  ┌──────────▼───────────────────┐  │
+│  │  Uvicorn (127.0.0.1:8000)    │  │
+│  │  - Internal only             │  │
+│  │  - Not exposed externally    │  │
+│  └──────────────────────────────┘  │
+│                                     │
+│  Supervisord manages both           │
+└─────────────────────────────────────┘
+```
 
 ## Prerequisites
 
@@ -82,9 +121,17 @@ docker compose -f docker-compose.prod.yml down
 
 ### Environment Variable Notes
 
+**Runtime Configuration:**
+The production image uses **runtime environment variables** that are injected by `entrypoint.sh` into `/var/www/html/env-config.js`. This is different from development mode which uses build-time `VITE_*` variables.
+
 - **COORDINATOR_URL**: Can be provided as `ws://host:port/ws` (full WebSocket URL) or `host:port` (protocol will be added automatically)
 - **CORS_ORIGINS**: Set this to match your dashboard's public URL(s) to prevent CORS errors. Multiple origins can be comma-separated.
-- **WS_URL_EXTERNAL**: Only needed if the dashboard is behind a reverse proxy with a different external URL for WebSocket connections
+- **WS_URL_EXTERNAL**: Only needed if the dashboard is behind a reverse proxy with a different external URL for WebSocket connections. Default is `/api/ws` (relative URL).
+
+**Important:**
+- ❌ `VITE_API_URL` and `VITE_WS_URL` are **NOT used** in the production image
+- ✅ Frontend automatically uses relative URLs (`/api`, `/api/ws`) via nginx proxy
+- ✅ Configuration is injected at **container startup**, not build time
 
 ## Volume Mounts
 
