@@ -214,8 +214,11 @@ export function TargetRow({
       return <span className="text-muted">N/A</span>;
     }
 
-    // Check if cache is expired
-    const outputTimestamp = new Date(output.timestamp).getTime();
+    // Check if cache is expired (guard against invalid timestamps)
+    const outputTimestamp = Date.parse(output.timestamp);
+    if (Number.isNaN(outputTimestamp)) {
+      return <span className="text-muted">N/A</span>;
+    }
     const now = Date.now();
     const isCacheExpired = now - outputTimestamp > CACHE_TIMEOUT_MS;
 
