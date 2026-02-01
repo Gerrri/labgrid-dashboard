@@ -28,14 +28,20 @@ class Settings(BaseSettings):
     labgrid_poll_interval_seconds: int = 5
 
     # CORS settings - accepts comma-separated string or list
-    cors_origins: List[str] = ["http://localhost:3000"]
+    # Use Union[str, List[str]] to prevent pydantic from JSON-parsing strings
+    cors_origins: Union[str, List[str]] = ["http://localhost:3000"]
 
     @field_validator("cors_origins", mode="before")
     @classmethod
-    def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        """Parse CORS origins from comma-separated string."""
+    def parse_cors_origins(cls, v: Union[str, List[str], None]) -> List[str]:
+        """Parse CORS origins from comma-separated string or handle empty values."""
+        # Handle None or empty string by returning default
+        if v is None or v == "":
+            return ["http://localhost:3000"]
+        # Parse comma-separated string
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",") if origin.strip()]
+        # Return list as-is
         return v
 
     # Commands configuration
