@@ -35,6 +35,8 @@ services:
 
       # Optional: External WebSocket URL (for reverse proxy scenarios)
       # - WS_URL_EXTERNAL=/api/ws
+      # Optional: External API base URL for frontend runtime config
+      # - API_URL_EXTERNAL=/api
 
     volumes:
       # Mount configuration files (customize paths as needed)

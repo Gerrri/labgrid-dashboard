@@ -118,6 +118,7 @@ docker compose -f docker-compose.prod.yml down
 | `PRESETS_FILE` | `/app/target_presets.json` | Path to target presets configuration file |
 | `DEBUG` | `false` | Enable debug logging (`true` or `false`) |
 | `WS_URL_EXTERNAL` | `/api/ws` | External WebSocket URL (for reverse proxy scenarios) |
+| `API_URL_EXTERNAL` | `/api` | External API base URL for frontend runtime config |
 | `UVICORN_WORKERS` | `1` | Number of backend worker processes |
 | `UVICORN_LOG_LEVEL` | `info` | Backend log level (`debug`, `info`, `warning`, `error`) |
 
@@ -128,12 +129,33 @@ The production image uses **runtime environment variables** that are injected by
 
 - **COORDINATOR_URL**: Can be provided as `ws://host:port/ws` (full WebSocket URL) or `host:port` (protocol will be added automatically)
 - **CORS_ORIGINS**: Set this to match your dashboard's public URL(s) to prevent CORS errors. Multiple origins can be comma-separated.
+- **API_URL_EXTERNAL**: Optional frontend runtime API base. Default `/api`.
 - **WS_URL_EXTERNAL**: Only needed if the dashboard is behind a reverse proxy with a different external URL for WebSocket connections. Default is `/api/ws` (relative URL).
 
 **Important:**
 - ❌ `VITE_API_URL` and `VITE_WS_URL` are **NOT used** in the production image
 - ✅ Frontend automatically uses relative URLs (`/api`, `/api/ws`) via nginx proxy
 - ✅ Configuration is injected at **container startup**, not build time
+
+### Frontend URL Normalization
+
+The frontend normalizes runtime URL settings before issuing requests:
+
+- `API_URL` (from `API_URL_EXTERNAL`) accepted values: `""`, `/`, `/api`, `/api/`, absolute URLs like `https://dashboard.example.com/api`
+- `WS_URL` (from `WS_URL_EXTERNAL`) accepted values: `/api/ws`, `/api/ws/`, `ws://...`, `wss://...`, `http(s)://...` (auto-converted to `ws(s)://`)
+
+Normalization guarantees:
+
+- No duplicate `/api/api/...` requests
+- No duplicate slashes
+- Stable behavior when reverse proxies expose prefixed paths
+
+Examples:
+
+- `API_URL=/api` + request path `/api/targets` -> `/api/targets`
+- `API_URL=/api/` + request path `/api/presets` -> `/api/presets`
+- `API_URL=` + request path `/api/targets` -> `/api/targets`
+- `WS_URL=/api/ws` -> `ws(s)://<current-host>/api/ws`
 
 ## Volume Mounts
 
@@ -334,6 +356,21 @@ docker exec labgrid-dashboard env | grep COORDINATOR
 ```bash
 docker run -e CORS_ORIGINS=http://localhost,https://dashboard.example.com ...
 ```
+
+### API requests return 404 on `/api/api/*`
+
+Symptoms:
+
+- Requests like `/api/api/targets` or `/api/api/presets` in browser network tab
+
+Checks:
+
+- Verify deployed image includes frontend URL normalization fix
+- Check runtime `env-config.js` values for `API_URL` and `WS_URL`
+
+Expected:
+
+- Requests should resolve to `/api/*` (single prefix), never `/api/api/*`
 
 ### Configuration changes not applied
 

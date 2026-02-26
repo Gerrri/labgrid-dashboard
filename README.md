@@ -113,10 +113,15 @@ The GHCR image uses **runtime configuration** (not build-time):
 |----------|----------|---------|-------------|
 | `COORDINATOR_URL` | **Yes** | - | Labgrid coordinator URL (e.g., `ws://coordinator:20408/ws`) |
 | `CORS_ORIGINS` | No | `http://localhost` | Comma-separated allowed origins |
+| `API_URL_EXTERNAL` | No | `/api` | Frontend runtime API base URL |
 | `WS_URL_EXTERNAL` | No | `/api/ws` | External WebSocket URL (for reverse proxy scenarios) |
 | `DEBUG` | No | `false` | Enable debug logging |
 
 **Note**: `VITE_*` variables are **not used** in the production image. Configuration is injected at runtime via `/env-config.js`.
+
+The frontend normalizes runtime URL settings to avoid malformed paths:
+- `API_URL`: `""`, `/`, `/api`, `/api/` all resolve correctly (no `/api/api/*`)
+- `WS_URL`: relative and absolute values are normalized to a valid WebSocket URL
 
 ### Example: Production with Docker Compose
 
