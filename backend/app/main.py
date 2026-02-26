@@ -25,6 +25,7 @@ from app.api.websocket import set_scheduler_service as set_ws_scheduler_service
 from app.config import get_settings
 from app.services.command_service import CommandService
 from app.services.labgrid_client import LabgridClient
+from app.services.labgrid_client import LabgridConnectionError
 from app.services.preset_service import PresetService
 from app.services.scheduler_service import SchedulerService
 from fastapi import FastAPI
@@ -103,20 +104,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         realm=settings.coordinator_realm,
         timeout=settings.coordinator_timeout,
     )
-    await labgrid_client.connect()
-
-    logger.info("Waiting for coordinator synchronization...")
-    targets_ready = await wait_for_targets_ready(
-        labgrid_client,
-        settings.coordinator_timeout,
-        settings.labgrid_poll_interval_seconds,
-    )
-    if targets_ready:
-        logger.info("Coordinator synchronization complete")
-    else:
-        logger.warning(
-            "Coordinator synchronization timed out, starting scheduler anyway"
+    try:
+        await labgrid_client.connect()
+    except LabgridConnectionError:
+        logger.exception(
+            "Failed to connect to coordinator during startup. "
+            "Starting API in degraded mode."
         )
+    else:
+        logger.info("Waiting for coordinator synchronization...")
+        targets_ready = await wait_for_targets_ready(
+            labgrid_client,
+            settings.coordinator_timeout,
+            settings.labgrid_poll_interval_seconds,
+        )
+        if targets_ready:
+            logger.info("Coordinator synchronization complete")
+        else:
+            logger.warning(
+                "Coordinator synchronization timed out, starting scheduler anyway"
+            )
 
     # Initialize scheduler service with preset support
     scheduler_service = SchedulerService()
@@ -130,7 +137,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     scheduler_service.set_preset_commands(preset_commands)
     scheduler_service.set_execute_callback(labgrid_client.execute_command)
-    scheduler_service.set_get_targets_callback(labgrid_client.get_places)
+    scheduler_service.set_get_targets_callback(labgrid_client.get_schedulable_places)
     scheduler_service.set_get_target_preset_callback(preset_service.get_target_preset)
 
     # Set the client and service instances for all modules
@@ -148,7 +155,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async def handle_target_update(target_name: str, target_data: dict) -> None:
         await broadcast_target_update(target_data)
 
-    await labgrid_client.subscribe_updates(handle_target_update)
+    updates_enabled = await labgrid_client.subscribe_updates(handle_target_update)
+    if not updates_enabled:
+        logger.warning("Target update subscription disabled (no coordinator connection)")
 
     logger.info("Labgrid Dashboard Backend started successfully")
 
@@ -206,10 +215,6 @@ def create_app() -> FastAPI:
         }
 
     return app
-
-
-# Create the app instance
-app = create_app()
 
 
 # Create the app instance

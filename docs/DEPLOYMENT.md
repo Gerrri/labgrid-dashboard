@@ -118,6 +118,8 @@ docker compose -f docker-compose.prod.yml down
 | `PRESETS_FILE` | `/app/target_presets.json` | Path to target presets configuration file |
 | `DEBUG` | `false` | Enable debug logging (`true` or `false`) |
 | `WS_URL_EXTERNAL` | `/api/ws` | External WebSocket URL (for reverse proxy scenarios) |
+| `UVICORN_WORKERS` | `1` | Number of backend worker processes |
+| `UVICORN_LOG_LEVEL` | `info` | Backend log level (`debug`, `info`, `warning`, `error`) |
 
 ### Environment Variable Notes
 
@@ -188,22 +190,24 @@ Defines hardware presets with associated commands. Example:
 
 ### Scaling
 
-The current image runs 2 uvicorn workers. For higher load:
+The image defaults to 1 uvicorn worker (`UVICORN_WORKERS=1`). For higher load:
 
 1. **Horizontal Scaling**: Run multiple dashboard containers behind a load balancer
 2. **Resource Limits**: Set memory and CPU limits in docker-compose or Kubernetes
-3. **Health Checks**: Use the built-in health endpoint at `/health`
+3. **Health Checks**: Use `/api/health` for backend health and `/health` for nginx health
 
 ### Monitoring
 
-**Health Check Endpoint**: `http://localhost/health`
+**Health Check Endpoints**:
+- Backend: `http://localhost/api/health`
+- Nginx: `http://localhost/health`
 
 ```bash
-# Check nginx health
-curl http://localhost/health
-
 # Check backend API health
 curl http://localhost/api/health
+
+# Check nginx health
+curl http://localhost/health
 ```
 
 **Logs**:
@@ -294,6 +298,12 @@ docker logs labgrid-dashboard
 - Coordinator URL incorrect or unreachable
 - Port 80 already in use (change port mapping: `-p 8080:80`)
 - Configuration files not mounted correctly
+
+**Portainer-specific checks**:
+- Verify logs of the `labgrid-dashboard` service/container (there is no separate backend container in the production image)
+- Use absolute host paths for bind mounts in Portainer stacks
+- Confirm `COORDINATOR_URL` is set in the stack environment (empty value starts backend in degraded mode)
+- Check `http://<host>/api/health` instead of only `http://<host>/health`
 
 ### Cannot connect to coordinator
 

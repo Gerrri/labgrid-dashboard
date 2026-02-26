@@ -30,6 +30,8 @@ services:
 
       # Optional: Debug logging
       - DEBUG=${DEBUG:-false}
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-1}
+      - UVICORN_LOG_LEVEL=${UVICORN_LOG_LEVEL:-info}
 
       # Optional: External WebSocket URL (for reverse proxy scenarios)
       # - WS_URL_EXTERNAL=/api/ws
@@ -40,7 +42,7 @@ services:
       - ./backend/target_presets.json:/app/target_presets.json:ro
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:80/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

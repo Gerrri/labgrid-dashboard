@@ -38,12 +38,12 @@ docker run -d \
 
 echo -e "${GREEN}✓ Container started${NC}\n"
 
-# Step 4: Wait for health endpoint
+# Step 4: Wait for backend health endpoint
 echo -e "${YELLOW}Step 4: Waiting for services to be ready...${NC}"
 MAX_RETRIES=30
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  if curl -s -f "http://localhost:${PORT}/health" > /dev/null 2>&1; then
+  if curl -s -f "http://localhost:${PORT}/api/health" > /dev/null 2>&1; then
     echo -e "${GREEN}✓ Services are ready${NC}\n"
     break
   fi
@@ -69,12 +69,13 @@ else
   exit 1
 fi
 
-# Test backend API health (may fail without coordinator)
+# Test backend API health endpoint (healthy or degraded are both acceptable)
 echo -n "  - Backend API health: "
-if curl -s -f "http://localhost:${PORT}/api/health" > /dev/null 2>&1; then
+if curl -s -f "http://localhost:${PORT}/api/health" | grep -Eq '"status":"(healthy|degraded)"'; then
   echo -e "${GREEN}✓${NC}"
 else
-  echo -e "${YELLOW}⚠${NC} (requires coordinator)"
+  echo -e "${RED}✗${NC}"
+  exit 1
 fi
 
 # Test frontend serves HTML

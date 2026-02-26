@@ -15,6 +15,23 @@ EOF
 echo "Generated env-config.js with:"
 echo "  API_URL: /api"
 echo "  WS_URL: ${WS_URL_EXTERNAL:-/api/ws}"
+echo "Runtime configuration:"
+echo "  COORDINATOR_URL: ${COORDINATOR_URL:-<not set>}"
+echo "  COORDINATOR_REALM: ${COORDINATOR_REALM:-realm1}"
+echo "  UVICORN_WORKERS: ${UVICORN_WORKERS:-1}"
+echo "  UVICORN_LOG_LEVEL: ${UVICORN_LOG_LEVEL:-info}"
+
+if [ -z "${COORDINATOR_URL:-}" ]; then
+  echo "WARNING: COORDINATOR_URL is not set. Backend will start in degraded mode."
+fi
+
+if [ ! -f "/app/commands.yaml" ]; then
+  echo "WARNING: /app/commands.yaml is missing or not a regular file."
+fi
+
+if [ ! -f "/app/target_presets.json" ]; then
+  echo "WARNING: /app/target_presets.json is missing or not a regular file."
+fi
 
 # Execute the command passed to the container (supervisord)
 exec "$@"
