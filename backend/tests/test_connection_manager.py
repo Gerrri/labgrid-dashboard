@@ -286,6 +286,25 @@ class TestConnectionManagerBroadcasting:
         assert manager.connection_count == 2
 
     @pytest.mark.asyncio
+    async def test_broadcast_to_subscribed_excludes_sender(self, manager, mock_websockets):
+        """Test broadcast_to_subscribed can exclude a specific connection."""
+        for ws in mock_websockets:
+            await manager.connect(ws)
+            manager.subscribe(ws, ["all"])
+
+        message = {"type": "target_update", "data": {"name": "dut-1"}}
+
+        await manager.broadcast_to_subscribed(
+            message,
+            "dut-1",
+            exclude=mock_websockets[0],
+        )
+
+        mock_websockets[0].send_text.assert_not_called()
+        mock_websockets[1].send_text.assert_called_once_with(json.dumps(message))
+        mock_websockets[2].send_text.assert_called_once_with(json.dumps(message))
+
+    @pytest.mark.asyncio
     async def test_send_to(self, manager, mock_websocket):
         """Test sending to a specific WebSocket."""
         # Arrange
