@@ -88,17 +88,25 @@ class ConnectionManager:
         for connection in disconnected:
             await self.disconnect(connection)
 
-    async def broadcast_to_subscribed(self, message: dict, target_name: str) -> None:
+    async def broadcast_to_subscribed(
+        self,
+        message: dict,
+        target_name: str,
+        exclude: WebSocket | None = None,
+    ) -> None:
         """Broadcast a message only to clients subscribed to a specific target.
 
         Args:
             message: The message to broadcast.
             target_name: The target name to filter subscribers.
+            exclude: Optional connection to exclude from the broadcast.
         """
         message_json = json.dumps(message)
         disconnected = []
 
         for connection in self.active_connections:
+            if connection is exclude:
+                continue
             if self.is_subscribed(connection, target_name):
                 try:
                     await connection.send_text(message_json)

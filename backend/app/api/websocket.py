@@ -188,6 +188,7 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             },
         },
         target_name,
+        exclude=websocket,
     )
 
 
