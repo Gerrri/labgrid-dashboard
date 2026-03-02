@@ -12,11 +12,32 @@ import type {
 } from "../types";
 import { buildApiUrl } from "../utils/urlBuilder";
 
+const DEFAULT_API_TIMEOUT_MS = 10000;
+
+export function resolveApiTimeoutMs(
+  value: string | undefined,
+): number {
+  if (!value) {
+    return DEFAULT_API_TIMEOUT_MS;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_API_TIMEOUT_MS;
+  }
+
+  return parsed;
+}
+
+const configuredApiTimeoutMs = resolveApiTimeoutMs(
+  window.ENV?.API_TIMEOUT_MS ?? import.meta.env.VITE_API_TIMEOUT_MS,
+);
+
 /**
  * Axios instance with base configuration
  */
 const axiosInstance = axios.create({
-  timeout: 10000,
+  timeout: configuredApiTimeoutMs,
   headers: {
     "Content-Type": "application/json",
   },
