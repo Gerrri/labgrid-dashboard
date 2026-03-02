@@ -104,6 +104,9 @@ export type WSMessageType =
 export interface WSMessage {
   type: WSMessageType;
   data?: unknown;
+  targets?: string[];
+  target?: string;
+  command_name?: string;
 }
 
 /**
