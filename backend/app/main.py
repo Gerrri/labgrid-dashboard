@@ -209,6 +209,7 @@ def create_app() -> FastAPI:
             "message": "Labgrid Dashboard API",
             "docs": "/docs",
             "health": "/api/health",
+            "readiness": "/api/readiness",
             "targets": "/api/targets",
             "presets": "/api/presets",
             "websocket": "/api/ws",

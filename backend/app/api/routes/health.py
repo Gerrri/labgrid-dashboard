@@ -2,7 +2,7 @@
 Health check endpoint for the Labgrid Dashboard API.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
 
 from app.services.labgrid_client import LabgridClient
@@ -15,6 +15,17 @@ class HealthResponse(BaseModel):
 
     status: str
     coordinator_connected: bool
+    service: str = "labgrid-dashboard-backend"
+
+
+class ReadinessResponse(BaseModel):
+    """Readiness check response model."""
+
+    status: str
+    api_alive: bool = True
+    coordinator_connected: bool
+    updates_active: bool
+    command_path_ready: bool
     service: str = "labgrid-dashboard-backend"
 
 
@@ -62,4 +73,29 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="healthy" if client.connected else "degraded",
         coordinator_connected=client.connected,
+    )
+
+
+@router.get("/readiness", response_model=ReadinessResponse)
+async def readiness_check(response: Response) -> ReadinessResponse:
+    """Readiness endpoint for deployment orchestration."""
+    client = get_labgrid_client()
+
+    if client is None:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return ReadinessResponse(
+            status="not_ready",
+            coordinator_connected=False,
+            updates_active=False,
+            command_path_ready=False,
+        )
+
+    if not client.command_path_ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    return ReadinessResponse(
+        status="ready" if client.command_path_ready else "not_ready",
+        coordinator_connected=client.connected,
+        updates_active=client.updates_active,
+        command_path_ready=client.command_path_ready,
     )

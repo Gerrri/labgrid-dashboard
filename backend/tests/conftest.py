@@ -97,6 +97,8 @@ def mock_labgrid_client(mock_targets: list[Target]) -> MagicMock:
     client.disconnect = AsyncMock()
     # Mock subscribe_updates
     client.subscribe_updates = AsyncMock(return_value=True)
+    client.updates_active = True
+    client.command_path_ready = True
     return client
 
 

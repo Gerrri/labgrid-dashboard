@@ -76,6 +76,16 @@ class LabgridClient:
         """Check if the client is connected to the coordinator."""
         return self._connected
 
+    @property
+    def updates_active(self) -> bool:
+        """Check if the update polling task is currently active."""
+        return self._poll_task is not None and not self._poll_task.done()
+
+    @property
+    def command_path_ready(self) -> bool:
+        """Check if command execution dependencies are available."""
+        return self._connected and self._session is not None
+
     async def connect(self) -> bool:
         """Connect to the Labgrid Coordinator using labgrid's ClientSession.
 
@@ -842,7 +852,6 @@ class LabgridClient:
             )
         except asyncio.TimeoutError:
             proc.kill()
-            timeout = get_settings().labgrid_command_timeout
             raise TimeoutError(f"Command timeout after {timeout}s")
 
         if proc.returncode != 0:
