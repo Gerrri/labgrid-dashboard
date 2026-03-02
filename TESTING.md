@@ -1,202 +1,123 @@
-# Testing Guide for Code Review Fixes
+# Testing Guide
 
-This document provides manual testing steps to verify all code review fixes.
+This document describes repeatable verification steps for changes in this repository.
 
-## Automated Tests Status
+Do not record point-in-time pass/fail results, test counts, or temporary failures here. Update this file only when the testing process changes.
 
-### ✅ Frontend Build
+## Required Test Environment
+
+Use staging mode for integration testing:
+
 ```bash
-cd frontend && npm run build
+docker compose --profile staging up -d --build
 ```
-**Status**: PASSED - No TypeScript errors, build successful
 
-### ✅ Backend Tests
+This is the default environment for validating end-to-end behavior because it exercises the frontend, backend, coordinator, exporters, and scheduled command flow together.
+
+## Baseline Checks
+
+Run the smallest relevant checks for the change you made:
+
+### Frontend Build
+
 ```bash
-cd backend && python -m pytest
+cd frontend
+npm run build
 ```
-**Status**: 132/133 passed (1 pre-existing failure unrelated to fixes)
 
-### ✅ Production Docker Image
+### Backend Tests
+
+```bash
+cd backend
+python -m pytest
+```
+
+### Production Image Smoke Test
+
 ```bash
 ./scripts/test-production-image.sh
 ```
-**Status**: PASSED - All infrastructure tests passed
 
-## Manual Testing Guide
+## Manual Verification Scenarios
 
-### Test 1: XSS Prevention (Critical Fix)
-**What was fixed**: URL validation in web_url to prevent XSS
+Choose the scenarios that match the change set.
 
-**How to test**:
-1. Open browser DevTools Console
-2. In the dashboard, create a target with malicious `web_url`:
-   - `javascript:alert('XSS')`
-   - `data:text/html,<script>alert('XSS')</script>`
-3. **Expected**: IP address should render as plain text (no link)
-4. **Expected**: No JavaScript execution
+### XSS Protection for `web_url`
 
-**Manual verification**:
-```javascript
-// In browser console, verify URL validation
-const testUrls = [
-  'http://192.168.1.1',      // ✓ Should work
-  'https://example.com',      // ✓ Should work
-  'javascript:alert(1)',      // ✗ Should be blocked
-  'data:text/html,test',      // ✗ Should be blocked
-];
-```
+1. Open a target that exposes a `web_url`.
+2. Verify normal `http://` and `https://` links still render as links.
+3. Verify invalid or unsafe values such as `javascript:` and `data:` render as plain text.
+4. Confirm no script execution occurs when interacting with the rendered IP address.
 
-### Test 2: Race Condition Prevention (High Priority)
-**What was fixed**: Command output state updates now use functional setState
+### Command Output Ordering
 
-**How to test**:
-1. Open a target's command panel
-2. Execute multiple commands rapidly (click 3-4 command buttons quickly)
-3. **Expected**: All command outputs appear in correct order
-4. **Expected**: No outputs are lost or overwritten
+1. Open a target command panel.
+2. Trigger multiple commands in quick succession.
+3. Confirm every result is shown.
+4. Confirm newer results appear first and older results remain visible.
 
-### Test 3: Preset Details Caching (High Priority)
-**What was fixed**: Preset details are now cached to avoid duplicate API calls
+### Preset Loading and Caching
 
-**How to test**:
-1. Open browser DevTools Network tab
-2. Open target settings (⚙️ icon)
-3. Close settings
-4. Open settings again
-5. **Expected**: No duplicate `/api/presets/{id}` calls on second open
-6. Check Network tab - preset detail calls should be cached
+1. Open target settings for a target.
+2. Confirm presets and the current assignment load successfully.
+3. Close and reopen the dialog.
+4. Confirm preset details are still available and there are no duplicate fetch regressions.
 
-### Test 4: AbortController - Component Unmount (Medium Priority)
-**What was fixed**: API calls are now cancelled when components unmount
+### Component Unmount Handling
 
-**How to test**:
-1. Open browser DevTools Console
-2. Open target settings (slow network helps):
-   - DevTools → Network → Throttling → Slow 3G
-3. Immediately close settings before load completes
-4. **Expected**: No console warnings about setState on unmounted component
-5. Check Network tab - requests should show "(canceled)"
+1. Open target settings or a command panel on a throttled network.
+2. Close the UI immediately before requests finish.
+3. Confirm the UI closes cleanly.
+4. Confirm there are no stale state update warnings or broken loading states.
 
-**Repeat for**:
-- Opening/closing CommandPanel
-- Expanding/collapsing targets quickly
+### Scheduled Output Rendering
 
-### Test 5: Invalid Timestamp Handling (Medium Priority)
-**What was fixed**: Scheduled outputs with invalid timestamps show "N/A"
+1. Verify recent successful scheduled outputs are shown in the table.
+2. Verify failed scheduled outputs display `N/A`.
+3. Verify invalid timestamps display `N/A`.
+4. Verify stale cached values expire as expected.
 
-**How to test**:
-1. Mock a target with invalid timestamp in scheduled_outputs
-2. **Expected**: Shows "N/A" instead of "Invalid Date"
-3. **Expected**: No cache expiry errors in console
+### WebSocket Connectivity
 
-**Browser console test**:
-```javascript
-// Should return NaN and be handled gracefully
-const invalidDate = Date.parse('invalid-timestamp');
-console.log(Number.isNaN(invalidDate)); // true
-```
+1. Start the staging stack.
+2. Open the dashboard.
+3. Confirm the WebSocket connects successfully.
+4. Confirm live target updates appear without a page reload.
 
-### Test 6: React Keys Stability (Low Priority)
-**What was fixed**: Command output keys now include more fields
+## Production Deployment Verification
 
-**How to test**:
-1. Execute same command multiple times quickly
-2. Open React DevTools → Profiler
-3. Record a new profiling session
-4. Execute commands
-5. **Expected**: Minimal component re-renders in OutputViewer
-
-### Test 7: Debug Logging Optimization (Low Priority)
-**What was fixed**: Debug logs only run when explicitly enabled
-
-**How to test**:
-1. Without `VITE_DEBUG_SCHEDULED=true`:
-   - Open console
-   - Expand targets
-   - **Expected**: No debug logs
-
-2. With debug enabled:
-   ```bash
-   # In .env
-   VITE_DEBUG_SCHEDULED=true
-   ```
-   - Rebuild: `npm run dev`
-   - **Expected**: Debug logs appear for scheduled outputs
-
-## Performance Testing
-
-### Memory Leaks
-1. Open Chrome DevTools → Memory
-2. Take heap snapshot
-3. Open/close target settings 10 times
-4. Take another heap snapshot
-5. Compare snapshots
-6. **Expected**: No significant memory growth from event listeners or timers
-
-### Network Efficiency
-1. Open DevTools → Network
-2. Refresh dashboard
-3. Count API calls
-4. **Expected**:
-   - Preset details fetched only once per preset
-   - No duplicate calls when opening settings
-
-## Browser Compatibility
-
-Test in:
-- ✅ Chrome/Edge (Chromium)
-- ✅ Firefox
-- ✅ Safari (if available)
-
-## Production Deployment Test
+Use this when validating the production image or release process:
 
 ```bash
-# Build production image
 docker build -t labgrid-dashboard:test -f Dockerfile.prod .
 
-# Run with test config
 docker run -d \
   --name labgrid-test \
   -p 8080:80 \
   -e COORDINATOR_URL=ws://your-coordinator:20408/ws \
   labgrid-dashboard:test
-
-# Test endpoints
-curl http://localhost:8080/health              # Nginx
-curl http://localhost:8080/api/health          # Backend (requires coordinator)
-curl http://localhost:8080/env-config.js       # Runtime config
 ```
 
-## Regression Testing
+Check:
 
-After all fixes, verify these still work:
-- ✅ Target expansion/collapse
-- ✅ Command execution
-- ✅ Preset changes
-- ✅ WebSocket real-time updates
-- ✅ Scheduled command columns
-- ✅ Target settings dialog
+- `http://localhost:8080/health` returns the nginx health response
+- `http://localhost:8080/api/health` returns the backend health payload
+- `http://localhost:8080/` serves the frontend
+- `http://localhost:8080/env-config.js` serves runtime configuration
 
-## Automated Test Summary
+## Regression Checklist
 
-| Test Suite | Status | Details |
-|------------|--------|---------|
-| Frontend Build | ✅ PASS | TypeScript compilation successful |
-| Backend Tests | ✅ PASS | 132/133 tests passed |
-| Production Image | ✅ PASS | Docker build & runtime tests passed |
-| Manual Testing | ⏳ TODO | Follow guide above |
+Before merging a non-trivial change, verify these still work:
 
-## Known Issues (Pre-existing)
+- Target expansion and collapse
+- Command execution
+- Preset assignment changes
+- Scheduled command columns
+- Target settings dialog
+- Real-time updates via WebSocket
 
-1. Backend test failure in `test_get_places_with_acquired_resource` - unrelated to fixes
-2. Frontend warning about `env-config.js` bundling - expected (runtime script)
+## Maintenance Notes
 
-## Checklist for Merge
-
-- [x] All automated tests pass
-- [x] Frontend builds without errors
-- [x] Production Docker image builds
-- [ ] Manual testing completed
-- [ ] No console errors in browser
-- [ ] No memory leaks detected
-- [ ] Performance acceptable
+- Keep this document procedural.
+- Reference release-specific outcomes in pull requests, CI logs, or release notes instead of here.
+- If the test workflow changes, update this file and the release checklist together.
