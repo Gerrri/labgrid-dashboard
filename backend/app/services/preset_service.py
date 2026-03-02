@@ -7,6 +7,7 @@ providing persistence across server restarts.
 
 import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -82,14 +83,25 @@ class PresetService:
 
     def _save(self) -> None:
         """Save target-preset assignments to the JSON file."""
+        temp_path: Optional[Path] = None
         try:
             presets_data = TargetPresetsFile(assignments=self._assignments)
-            with open(self._presets_file, "w", encoding="utf-8") as f:
-                json.dump(presets_data.model_dump(), f, indent=2)
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=self._presets_file.parent,
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                json.dump(presets_data.model_dump(), temp_file, indent=2)
+
+            temp_path.replace(self._presets_file)
             logger.debug(
                 f"Saved {len(self._assignments)} assignments to {self._presets_file}"
             )
         except Exception as e:
+            if temp_path and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
             logger.error(f"Failed to save presets file: {e}")
             raise
 
