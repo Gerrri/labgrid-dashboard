@@ -583,21 +583,13 @@ class LabgridClient:
             place_name: The place name to acquire.
 
         Returns:
-            True if successfully acquired.
+            True if this call acquired the target, False if it was already held
+            by the dashboard user.
 
         Raises:
             TargetAcquiredByOtherError: If target is acquired by another user.
             RuntimeError: If acquisition fails for other reasons.
         """
-        # Check current state first
-        current_owner = await self._get_acquired_by(place_name)
-        if current_owner and current_owner != LABGRID_DASHBOARD_USER:
-            raise TargetAcquiredByOtherError(place_name, current_owner)
-
-        if current_owner == LABGRID_DASHBOARD_USER:
-            logger.debug(f"Target '{place_name}' already acquired by us")
-            return True  # Already acquired by us
-
         logger.info(f"Acquiring target '{place_name}' as '{LABGRID_DASHBOARD_USER}'")
         proc = await asyncio.create_subprocess_exec(
             "labgrid-client",
@@ -615,9 +607,10 @@ class LabgridClient:
         if proc.returncode != 0:
             error = stderr.decode("utf-8", errors="replace")
             if "already acquired" in error.lower():
-                # Parse who acquired it from error message
-                # Error format: "place X is already acquired by Y"
                 acquired_by = self._parse_acquired_by_from_error(error)
+                if acquired_by == LABGRID_DASHBOARD_USER:
+                    logger.debug(f"Target '{place_name}' already acquired by us")
+                    return False
                 raise TargetAcquiredByOtherError(place_name, acquired_by)
             raise RuntimeError(f"Failed to acquire target: {error}")
 

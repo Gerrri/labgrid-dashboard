@@ -43,75 +43,83 @@ class TestAcquireTarget:
     @pytest.mark.asyncio
     async def test_acquire_target_success(self, labgrid_client):
         """Test successful target acquisition when target is not acquired."""
-        with patch.object(labgrid_client, "_get_acquired_by", return_value=None):
-            with patch("asyncio.create_subprocess_exec") as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 0
-                mock_proc.communicate.return_value = (b"acquired", b"")
-                mock_exec.return_value = mock_proc
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            mock_proc = AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.communicate.return_value = (b"acquired", b"")
+            mock_exec.return_value = mock_proc
 
-                result = await labgrid_client.acquire_target("test-target")
-                assert result is True
-                mock_exec.assert_called_once()
+            result = await labgrid_client.acquire_target("test-target")
+            assert result is True
+            mock_exec.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_acquire_target_already_acquired_by_us(self, labgrid_client):
-        """Test that we skip acquisition when already acquired by us."""
-        with patch.object(
-            labgrid_client, "_get_acquired_by", return_value=LABGRID_DASHBOARD_USER
-        ):
-            # Should return True without calling labgrid-client
-            with patch("asyncio.create_subprocess_exec") as mock_exec:
-                result = await labgrid_client.acquire_target("test-target")
-                assert result is True
-                mock_exec.assert_not_called()
+        """Test that our own existing acquisition is treated as success."""
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            mock_proc = AsyncMock()
+            mock_proc.returncode = 1
+            mock_proc.communicate.return_value = (
+                b"",
+                f"place test-target is already acquired by {LABGRID_DASHBOARD_USER}".encode(),
+            )
+            mock_exec.return_value = mock_proc
+
+            result = await labgrid_client.acquire_target("test-target")
+
+            assert result is False
+            mock_exec.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_acquire_target_already_acquired_by_other(self, labgrid_client):
         """Test that TargetAcquiredByOtherError is raised when acquired by other."""
-        with patch.object(
-            labgrid_client, "_get_acquired_by", return_value="other-user"
-        ):
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            mock_proc = AsyncMock()
+            mock_proc.returncode = 1
+            mock_proc.communicate.return_value = (
+                b"",
+                b"place test-target is already acquired by other-user",
+            )
+            mock_exec.return_value = mock_proc
+
             with pytest.raises(TargetAcquiredByOtherError) as exc:
                 await labgrid_client.acquire_target("test-target")
 
-            assert exc.value.target_name == "test-target"
-            assert exc.value.acquired_by == "other-user"
+        assert exc.value.target_name == "test-target"
+        assert exc.value.acquired_by == "other-user"
 
     @pytest.mark.asyncio
     async def test_acquire_target_fails_with_already_acquired_error(
         self, labgrid_client
     ):
         """Test handling of 'already acquired' error from labgrid-client."""
-        with patch.object(labgrid_client, "_get_acquired_by", return_value=None):
-            with patch("asyncio.create_subprocess_exec") as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 1
-                mock_proc.communicate.return_value = (
-                    b"",
-                    b"place test-target is already acquired by other-user",
-                )
-                mock_exec.return_value = mock_proc
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            mock_proc = AsyncMock()
+            mock_proc.returncode = 1
+            mock_proc.communicate.return_value = (
+                b"",
+                b"place test-target is already acquired by other-user",
+            )
+            mock_exec.return_value = mock_proc
 
-                with pytest.raises(TargetAcquiredByOtherError) as exc:
-                    await labgrid_client.acquire_target("test-target")
+            with pytest.raises(TargetAcquiredByOtherError) as exc:
+                await labgrid_client.acquire_target("test-target")
 
-                assert exc.value.target_name == "test-target"
+            assert exc.value.target_name == "test-target"
 
     @pytest.mark.asyncio
     async def test_acquire_target_fails_with_other_error(self, labgrid_client):
         """Test handling of other errors from labgrid-client."""
-        with patch.object(labgrid_client, "_get_acquired_by", return_value=None):
-            with patch("asyncio.create_subprocess_exec") as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 1
-                mock_proc.communicate.return_value = (b"", b"connection refused")
-                mock_exec.return_value = mock_proc
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            mock_proc = AsyncMock()
+            mock_proc.returncode = 1
+            mock_proc.communicate.return_value = (b"", b"connection refused")
+            mock_exec.return_value = mock_proc
 
-                with pytest.raises(RuntimeError) as exc:
-                    await labgrid_client.acquire_target("test-target")
+            with pytest.raises(RuntimeError) as exc:
+                await labgrid_client.acquire_target("test-target")
 
-                assert "connection refused" in str(exc.value)
+            assert "connection refused" in str(exc.value)
 
 
 class TestReleaseTarget:
