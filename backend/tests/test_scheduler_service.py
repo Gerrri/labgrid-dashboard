@@ -288,6 +288,12 @@ class TestSchedulerServiceGettingData:
         assert all_outputs is not scheduler._outputs  # Should be a copy
         assert all_outputs["uptime"] is not scheduler._outputs["uptime"]
 
+    def test_get_next_retry_delay_caps_backoff(self, scheduler):
+        """Test exponential retry delay growth is capped."""
+        assert scheduler._get_next_retry_delay(5) == 10
+        assert scheduler._get_next_retry_delay(10) == 20
+        assert scheduler._get_next_retry_delay(40) == 60
+
 
 class TestSchedulerServiceStartStop:
     """Test scheduler service start/stop functionality."""

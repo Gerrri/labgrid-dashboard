@@ -18,6 +18,9 @@ from app.models.target import ScheduledCommand, ScheduledCommandOutput
 
 logger = logging.getLogger(__name__)
 
+SCHEDULER_ERROR_BACKOFF_INITIAL = 5
+SCHEDULER_ERROR_BACKOFF_MAX = 60
+
 
 class SchedulerService:
     """Service for executing scheduled commands periodically with preset support."""
@@ -207,25 +210,33 @@ class SchedulerService:
     async def _run_command_loop(self, cmd: ScheduledCommand) -> None:
         """Run the periodic execution loop for a command."""
         logger.debug(f"Command loop started for '{cmd.name}'")
-
-        # Execute immediately on start
-        await self._execute_on_targets_with_preset(cmd)
+        retry_delay = SCHEDULER_ERROR_BACKOFF_INITIAL
+        run_immediately = True
 
         while self._running:
             try:
-                await asyncio.sleep(cmd.interval_seconds)
+                if run_immediately:
+                    run_immediately = False
+                else:
+                    await asyncio.sleep(cmd.interval_seconds)
 
                 if not self._running:
                     break
 
                 await self._execute_on_targets_with_preset(cmd)
+                retry_delay = SCHEDULER_ERROR_BACKOFF_INITIAL
 
             except asyncio.CancelledError:
                 logger.debug(f"Command loop cancelled for '{cmd.name}'")
                 break
             except Exception as e:
                 logger.error(f"Error in command loop for '{cmd.name}': {e}")
-                await asyncio.sleep(5)  # Brief pause before retry
+                await asyncio.sleep(retry_delay)
+                retry_delay = self._get_next_retry_delay(retry_delay)
+
+    def _get_next_retry_delay(self, current_delay: int) -> int:
+        """Compute the next retry delay with an exponential backoff cap."""
+        return min(current_delay * 2, SCHEDULER_ERROR_BACKOFF_MAX)
 
     async def _execute_on_targets_with_preset(self, cmd: ScheduledCommand) -> None:
         """Execute a command on targets that have this command in their preset.
