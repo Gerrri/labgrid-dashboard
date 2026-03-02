@@ -75,7 +75,7 @@ This checklist ensures a smooth and reliable release process for the Labgrid Das
   - [ ] `1.2.3` (without 'v' prefix)
   - [ ] `1.2` (minor version)
   - [ ] `1` (major version)
-  - [ ] `latest` (if releasing from main)
+  - [ ] `latest` (published by the release tag workflow)
 - [ ] Multi-architecture images available (amd64, arm64):
   ```bash
   docker manifest inspect ghcr.io/gerrri/labgrid-dashboard:v1.2.3

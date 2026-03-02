@@ -59,6 +59,7 @@ Labgrid Dashboard provides a real-time web interface to:
 docker pull ghcr.io/gerrri/labgrid-dashboard:latest
 
 # Or pin to a specific version (recommended for production)
+# Release tags publish both v-prefixed and plain semver image tags
 docker pull ghcr.io/gerrri/labgrid-dashboard:1.0.0
 ```
 

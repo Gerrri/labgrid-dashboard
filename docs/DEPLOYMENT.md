@@ -64,6 +64,10 @@ The image is published to: `ghcr.io/gerrri/labgrid-dashboard`
 ```bash
 docker pull ghcr.io/gerrri/labgrid-dashboard:latest
 
+# Exact release tags are also published with and without the leading "v"
+# Example: ghcr.io/gerrri/labgrid-dashboard:v1.2.3
+# Example: ghcr.io/gerrri/labgrid-dashboard:1.2.3
+
 docker run -d \
   --name labgrid-dashboard \
   -p 80:80 \
