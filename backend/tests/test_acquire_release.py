@@ -263,6 +263,77 @@ class TestExecuteCommandWithAcquireRelease:
                     assert code == 1
 
     @pytest.mark.asyncio
+    async def test_execute_command_does_not_release_shared_dashboard_lock(
+        self, labgrid_client
+    ):
+        """Test that an inherited dashboard acquisition is not released."""
+        with patch.object(
+            labgrid_client, "acquire_target", return_value=False
+        ) as mock_acquire:
+            with patch.object(
+                labgrid_client, "release_target_with_retry", return_value=True
+            ) as mock_release:
+                with patch.object(
+                    labgrid_client,
+                    "_execute_via_labgrid_client",
+                    return_value="command output",
+                ):
+                    result, code = await labgrid_client.execute_command(
+                        "test", "echo test"
+                    )
+
+                    mock_acquire.assert_called_once_with("test")
+                    mock_release.assert_not_called()
+                    assert result == "command output"
+                    assert code == 0
+
+    @pytest.mark.asyncio
+    async def test_execute_command_serializes_same_target(self, labgrid_client):
+        """Test that concurrent commands on the same target do not overlap."""
+        started_first = asyncio.Event()
+        finish_first = asyncio.Event()
+        call_order = []
+
+        async def mock_exec(place_name, command):
+            call_order.append(f"start:{command}")
+            if command == "first":
+                started_first.set()
+                await finish_first.wait()
+            call_order.append(f"finish:{command}")
+            return command
+
+        with patch.object(labgrid_client, "acquire_target", return_value=True):
+            with patch.object(
+                labgrid_client, "release_target_with_retry", return_value=True
+            ):
+                with patch.object(
+                    labgrid_client,
+                    "_execute_via_labgrid_client",
+                    side_effect=mock_exec,
+                ):
+                    first_task = asyncio.create_task(
+                        labgrid_client.execute_command("test", "first")
+                    )
+                    await started_first.wait()
+
+                    second_task = asyncio.create_task(
+                        labgrid_client.execute_command("test", "second")
+                    )
+                    await asyncio.sleep(0)
+
+                    assert call_order == ["start:first"]
+
+                    finish_first.set()
+                    await asyncio.gather(first_task, second_task)
+
+        assert call_order == [
+            "start:first",
+            "finish:first",
+            "start:second",
+            "finish:second",
+        ]
+
+    @pytest.mark.asyncio
     async def test_execute_command_raises_acquired_by_other(self, labgrid_client):
         """Test that TargetAcquiredByOtherError is propagated."""
         with patch.object(
