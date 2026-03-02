@@ -364,6 +364,25 @@ class TestLabgridClientWithMockedSession:
         assert places[0].resources[0].type == "NetworkSerialPort"
 
     @pytest.mark.asyncio
+    async def test_refresh_cache_keeps_empty_params_resources_online(
+        self, connected_client: LabgridClient
+    ):
+        """Test that empty params alone do not mark a resource offline."""
+        empty_params_resource = self._create_mock_resource_entry(
+            cls_name="SomeResource",
+            params={},
+            acquired=None,
+            avail=True,
+        )
+        connected_client._session.resources = {
+            "exporter-1": {"default": {"SomeResource": empty_params_resource}}
+        }
+
+        await connected_client._refresh_cache()
+
+        assert connected_client._resources_cache["exporter-1"]["SomeResource"]["avail"] is True
+
+    @pytest.mark.asyncio
     async def test_get_places_with_offline_resource(
         self, connected_client: LabgridClient
     ):

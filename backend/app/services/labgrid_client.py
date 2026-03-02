@@ -222,7 +222,7 @@ class LabgridClient:
 
                         # If params couldn't be loaded, the exporter is likely offline
                         # Labgrid returns the exporter but with empty/missing data
-                        if not params_available or not params:
+                        if not params_available:
                             avail = False
                             logger.debug(
                                 f"Exporter '{exporter_name}' marked offline "
