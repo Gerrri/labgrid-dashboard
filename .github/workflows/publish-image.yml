@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image_name:
-        description: Custom image tag to publish (for example: fix-22-v0.0.1)
+        description: "Custom image tag to publish (for example: fix-22-v0.0.1)"
         required: false
         type: string
   push:
