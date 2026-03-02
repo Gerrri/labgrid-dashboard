@@ -29,6 +29,12 @@ The Labgrid Dashboard is distributed as a single production-ready Docker image t
 
 The image is published to: `ghcr.io/gerrri/labgrid-dashboard`
 
+## Supported Deployment Modes
+
+- **Dashboard-only production image**: Use the GHCR image from this guide when you already have an external coordinator.
+- **Dashboard with external coordinator**: The supported production path. Set `COORDINATOR_URL` to the remote coordinator and use `/api/readiness` to gate traffic.
+- **Full demo or test stack**: Use `docker compose --profile staging up -d --build` from the repository for local integration testing, not as the production deployment model.
+
 **Container Architecture:**
 ```
 ┌─────────────────────────────────────┐
@@ -123,6 +129,7 @@ docker compose -f docker-compose.prod.yml down
 | `DEBUG` | `false` | Enable debug logging (`true` or `false`) |
 | `WS_URL_EXTERNAL` | `/api/ws` | External WebSocket URL (for reverse proxy scenarios) |
 | `API_URL_EXTERNAL` | `/api` | External API base URL for frontend runtime config |
+| `API_TIMEOUT_MS` | `10000` | Frontend API request timeout in milliseconds |
 | `UVICORN_WORKERS` | `1` | Number of backend worker processes |
 | `UVICORN_LOG_LEVEL` | `info` | Backend log level (`debug`, `info`, `warning`, `error`) |
 
@@ -135,6 +142,7 @@ The production image uses **runtime environment variables** that are injected by
 - **CORS_ORIGINS**: Set this to match your dashboard's public URL(s) to prevent CORS errors. Multiple origins can be comma-separated.
 - **API_URL_EXTERNAL**: Optional frontend runtime API base. Default `/api`.
 - **WS_URL_EXTERNAL**: Only needed if the dashboard is behind a reverse proxy with a different external URL for WebSocket connections. Default is `/api/ws` (relative URL).
+- **API_TIMEOUT_MS**: Optional frontend request timeout. Use a positive integer in milliseconds if command requests legitimately take longer than the default 10 seconds.
 
 **Important:**
 - ❌ `VITE_API_URL` and `VITE_WS_URL` are **NOT used** in the production image
@@ -147,6 +155,7 @@ The frontend normalizes runtime URL settings before issuing requests:
 
 - `API_URL` (from `API_URL_EXTERNAL`) accepted values: `""`, `/`, `/api`, `/api/`, absolute URLs like `https://dashboard.example.com/api`
 - `WS_URL` (from `WS_URL_EXTERNAL`) accepted values: `/api/ws`, `/api/ws/`, `ws://...`, `wss://...`, `http(s)://...` (auto-converted to `ws(s)://`)
+- `API_TIMEOUT_MS` accepted values: positive integers like `10000`, `30000`, `60000`
 
 Normalization guarantees:
 
@@ -220,19 +229,23 @@ The image defaults to 1 uvicorn worker (`UVICORN_WORKERS=1`). For higher load:
 
 1. **Horizontal Scaling**: Run multiple dashboard containers behind a load balancer
 2. **Resource Limits**: Set memory and CPU limits in docker-compose or Kubernetes
-3. **Health Checks**: Use `/api/health` for backend health and `/health` for nginx health
+3. **Health Checks**: Use `/health` for nginx liveness, `/api/health` for backend liveness, and `/api/readiness` before routing user traffic that depends on the coordinator
 
 ### Monitoring
 
 **Health Check Endpoints**:
-- Backend: `http://localhost/api/health`
-- Nginx: `http://localhost/health`
+- Nginx liveness: `http://localhost/health`
+- Backend liveness: `http://localhost/api/health`
+- Backend readiness: `http://localhost/api/readiness`
 
 ```bash
-# Check backend API health
+# Check backend API liveness
 curl http://localhost/api/health
 
-# Check nginx health
+# Check backend readiness for coordinator-backed commands
+curl http://localhost/api/readiness
+
+# Check nginx liveness
 curl http://localhost/health
 ```
 
@@ -251,7 +264,8 @@ docker exec labgrid-dashboard supervisorctl status
 
 **Metrics**:
 - Monitor container metrics: CPU, memory, network
-- Monitor coordinator connectivity via `/api/health` endpoint
+- Monitor coordinator connectivity via `/api/health`
+- Use `/api/readiness` to detect when the API is up but command execution is not yet ready
 - Monitor WebSocket connections
 
 ### Backup

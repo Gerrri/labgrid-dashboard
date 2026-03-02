@@ -116,6 +116,7 @@ The GHCR image uses **runtime configuration** (not build-time):
 | `CORS_ORIGINS` | No | `http://localhost` | Comma-separated allowed origins |
 | `API_URL_EXTERNAL` | No | `/api` | Frontend runtime API base URL |
 | `WS_URL_EXTERNAL` | No | `/api/ws` | External WebSocket URL (for reverse proxy scenarios) |
+| `API_TIMEOUT_MS` | No | `10000` | Frontend API request timeout in milliseconds |
 | `DEBUG` | No | `false` | Enable debug logging |
 
 **Note**: `VITE_*` variables are **not used** in the production image. Configuration is injected at runtime via `/env-config.js`.
@@ -123,6 +124,10 @@ The GHCR image uses **runtime configuration** (not build-time):
 The frontend normalizes runtime URL settings to avoid malformed paths:
 - `API_URL`: `""`, `/`, `/api`, `/api/` all resolve correctly (no `/api/api/*`)
 - `WS_URL`: relative and absolute values are normalized to a valid WebSocket URL
+
+The frontend request timeout is also configurable at runtime:
+- `API_TIMEOUT_MS`: positive integer in milliseconds, defaults to `10000`
+- Use this when valid command paths take longer than the default UI timeout
 
 ### Example: Production with Docker Compose
 
@@ -387,6 +392,7 @@ When backend is running, visit:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/health` | GET | Health check with coordinator status |
+| `/api/readiness` | GET | Readiness check for coordinator-dependent command execution |
 | `/api/targets` | GET | List all targets |
 | `/api/targets/{name}` | GET | Get specific target details |
 | `/api/targets/{name}/commands` | GET | Get available commands for target |
