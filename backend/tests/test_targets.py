@@ -2,8 +2,12 @@
 Tests for the targets API endpoints.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from httpx import AsyncClient
+
+from app.services.labgrid_client import TargetAcquiredByOtherError
 
 
 @pytest.mark.asyncio
@@ -122,3 +126,38 @@ async def test_execute_command_invalid_command(client: AsyncClient):
     data = response.json()
     assert "detail" in data
     assert "not found" in data["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_execute_command_rolls_back_when_refresh_fails(
+    client: AsyncClient,
+    mock_labgrid_client,
+):
+    """Test that command execution falls back to rollback state if refresh fails."""
+    original_target = await mock_labgrid_client.get_place_info("test-dut-1")
+    mock_labgrid_client.execute_command.side_effect = TargetAcquiredByOtherError(
+        "test-dut-1",
+        "other-user",
+    )
+    mock_labgrid_client.get_place_info.side_effect = [
+        original_target,
+        RuntimeError("coordinator unavailable"),
+    ]
+
+    with patch(
+        "app.api.routes.targets.broadcast_target_update",
+        new=AsyncMock(),
+    ) as mock_broadcast:
+        response = await client.post(
+            "/api/targets/test-dut-1/command",
+            json={"command_name": "Test Command"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["exit_code"] == 1
+    assert "other-user" in data["output"]
+    assert mock_broadcast.await_count == 2
+    fallback_update = mock_broadcast.await_args_list[-1].args[0]
+    assert fallback_update["status"] == "acquired"
+    assert fallback_update["acquired_by"] == "other-user"
