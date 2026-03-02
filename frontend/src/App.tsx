@@ -128,9 +128,20 @@ function App() {
   const handleTargetsList = useCallback(
     (targetsList: Target[]) => {
       console.log("Received targets list via WebSocket:", targetsList.length);
-      refetch();
+      let shouldRefetch = targetsList.length !== totalTargets;
+
+      for (const target of targetsList) {
+        const applied = updateTargetFromWebSocket(target);
+        if (!applied) {
+          shouldRefetch = true;
+        }
+      }
+
+      if (shouldRefetch) {
+        refetch();
+      }
     },
-    [refetch],
+    [refetch, totalTargets, updateTargetFromWebSocket],
   );
 
   const handleConnectionChange = useCallback((connected: boolean) => {
