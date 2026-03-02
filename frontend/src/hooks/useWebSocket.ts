@@ -28,6 +28,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const callbacksRef = useRef<UseWebSocketOptions>(options);
   // Flag to track intentional closes (cleanup, unmount) vs unexpected disconnects
   const intentionalCloseRef = useRef(false);
 
@@ -38,6 +39,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
     onTargetsList,
     onConnectionChange,
   } = options;
+
+  useEffect(() => {
+    callbacksRef.current = options;
+  }, [options]);
 
   const clearReconnectTimeout = useCallback(() => {
     if (reconnectTimeoutRef.current !== null) {
@@ -61,7 +66,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
       ws.onopen = () => {
         console.log('WebSocket connected');
         setConnected(true);
-        onConnectionChange?.(true);
+        callbacksRef.current.onConnectionChange?.(true);
         reconnectAttemptsRef.current = 0;
       };
 
@@ -71,7 +76,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
 
           switch (message.type) {
             case 'target_update':
-              onTargetUpdate?.(message.data as Target);
+              callbacksRef.current.onTargetUpdate?.(message.data as Target);
               break;
             case 'command_output': {
               const data = message.data as {
@@ -81,7 +86,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
               };
               const targetName = data.target_name ?? data.target;
               if (targetName) {
-                onCommandOutput?.(targetName, data.output);
+                callbacksRef.current.onCommandOutput?.(targetName, data.output);
               }
               break;
             }
@@ -91,11 +96,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
                 command_name: string;
                 output: CommandOutput;
               };
-              onScheduledOutput?.(data.target, data.command_name, data.output);
+              callbacksRef.current.onScheduledOutput?.(
+                data.target,
+                data.command_name,
+                data.output
+              );
               break;
             }
             case 'targets_list':
-              onTargetsList?.(message.data as Target[]);
+              callbacksRef.current.onTargetsList?.(message.data as Target[]);
               break;
             default:
               console.log('Unknown message type:', message.type);
@@ -123,7 +132,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
         }
 
         console.log('WebSocket disconnected');
-        onConnectionChange?.(false);
+        callbacksRef.current.onConnectionChange?.(false);
 
         // Attempt reconnection
         if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
@@ -145,7 +154,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
     } catch (err) {
       console.error('Failed to create WebSocket:', err);
     }
-  }, [onTargetUpdate, onCommandOutput, onScheduledOutput, onTargetsList, onConnectionChange]);
+  }, []);
 
   const send = useCallback((message: WSMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
