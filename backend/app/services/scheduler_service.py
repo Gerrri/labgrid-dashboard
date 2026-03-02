@@ -274,7 +274,7 @@ class SchedulerService:
 
                 # Try to acquire lock, skip if already locked (another command is running)
                 if target_lock.locked():
-                    logger.debug(
+                    logger.warning(
                         f"Skipping '{cmd.name}' on '{target.name}': target is busy"
                     )
                     continue
