@@ -173,6 +173,40 @@ class TestLabgridClientWithMockedSession:
         assert places[0].status == "available"
 
     @pytest.mark.asyncio
+    async def test_refresh_cache_accumulates_multiple_resources_per_exporter(
+        self, connected_client: LabgridClient
+    ):
+        """Test that _refresh_cache keeps all resources for the same exporter."""
+        serial_port = self._create_mock_resource_entry(
+            cls_name="NetworkSerialPort",
+            params={"host": "192.168.1.100", "port": 5000},
+            acquired=None,
+            avail=True,
+        )
+        usb_port = self._create_mock_resource_entry(
+            cls_name="USBSerialPort",
+            params={"path": "/dev/ttyUSB0"},
+            acquired=None,
+            avail=True,
+        )
+
+        connected_client._session.resources = {
+            "exporter-1": {
+                "default": {
+                    "NetworkSerialPort": serial_port,
+                    "USBSerialPort": usb_port,
+                }
+            }
+        }
+
+        await connected_client._refresh_cache()
+
+        assert set(connected_client._resources_cache["exporter-1"]) == {
+            "NetworkSerialPort",
+            "USBSerialPort",
+        }
+
+    @pytest.mark.asyncio
     async def test_get_places_with_acquired_resource(
         self, connected_client: LabgridClient
     ):
