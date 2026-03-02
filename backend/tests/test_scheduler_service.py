@@ -286,6 +286,7 @@ class TestSchedulerServiceGettingData:
         # Assert
         assert all_outputs == outputs
         assert all_outputs is not scheduler._outputs  # Should be a copy
+        assert all_outputs["uptime"] is not scheduler._outputs["uptime"]
 
 
 class TestSchedulerServiceStartStop:
