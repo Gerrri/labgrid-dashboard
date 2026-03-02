@@ -32,14 +32,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
   // Flag to track intentional closes (cleanup, unmount) vs unexpected disconnects
   const intentionalCloseRef = useRef(false);
 
-  const {
-    onTargetUpdate,
-    onCommandOutput,
-    onScheduledOutput,
-    onTargetsList,
-    onConnectionChange,
-  } = options;
-
   useEffect(() => {
     callbacksRef.current = options;
   }, [options]);
