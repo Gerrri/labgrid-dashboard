@@ -213,10 +213,7 @@ export function usePresetsWithTargets(): UsePresetsWithTargetsResult {
         updatedTargets[index] = {
           ...existingTarget,
           ...target,
-          scheduled_outputs: {
-            ...existingTarget.scheduled_outputs,
-            ...target.scheduled_outputs,
-          },
+          scheduled_outputs: target.scheduled_outputs,
         };
 
         return { ...group, targets: updatedTargets };
