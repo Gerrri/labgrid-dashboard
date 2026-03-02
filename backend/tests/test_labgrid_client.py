@@ -53,12 +53,16 @@ class TestLabgridClient:
         client._connected = True
         client._resources_cache = {"test": {}}
         client._places_cache = {"test": {}}
+        client._known_exporters_cache = {"test": {"SomeResource": {"avail": False}}}
 
         await client.disconnect()
 
         assert client.connected is False
         assert client._resources_cache == {}
         assert client._places_cache == {}
+        assert client._known_exporters_cache == {
+            "test": {"SomeResource": {"avail": False}}
+        }
 
     @pytest.mark.asyncio
     async def test_get_places_returns_empty_when_not_connected(

@@ -298,7 +298,6 @@ class LabgridClient:
         self._connected = False
         self._resources_cache = {}
         self._places_cache = {}
-        self._known_exporters_cache = {}
         logger.info("Disconnected from Labgrid Coordinator")
 
     async def _resolve_hostname_to_ip(self, hostname: str) -> Optional[str]:
