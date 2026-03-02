@@ -168,7 +168,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
     (targetName?: string) => {
       send({
         type: 'subscribe',
-        data: targetName ? { target_name: targetName } : undefined,
+        targets: targetName ? [targetName] : ['all'],
       });
     },
     [send]
