@@ -11,6 +11,7 @@ the scheduled commands defined in that target's assigned preset.
 import asyncio
 import logging
 from datetime import datetime, timezone
+from copy import deepcopy
 from typing import Callable, Dict, List, Optional, Set
 
 from app.models.target import ScheduledCommand, ScheduledCommandOutput
@@ -190,7 +191,7 @@ class SchedulerService:
         Returns:
             Nested dictionary: command_name -> target_name -> output
         """
-        return self._outputs.copy()
+        return deepcopy(self._outputs)
 
     async def _start_command_task(self, cmd: ScheduledCommand) -> None:
         """Start the periodic execution task for a command."""
