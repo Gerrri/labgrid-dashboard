@@ -98,17 +98,21 @@ class TestLabgridClient:
         assert exit_code == 1
         assert "Not connected" in output
 
-    def test_resolve_hostname_to_ip(self, client: LabgridClient):
+    @pytest.mark.asyncio
+    async def test_resolve_hostname_to_ip(self, client: LabgridClient):
         """Test hostname resolution."""
         # localhost should resolve to 127.0.0.1
-        ip = client._resolve_hostname_to_ip("localhost")
+        ip = await client._resolve_hostname_to_ip("localhost")
         assert ip == "127.0.0.1"
 
-    def test_resolve_hostname_to_ip_returns_none_for_invalid(
+    @pytest.mark.asyncio
+    async def test_resolve_hostname_to_ip_returns_none_for_invalid(
         self, client: LabgridClient
     ):
         """Test that invalid hostname returns None."""
-        ip = client._resolve_hostname_to_ip("this-host-does-not-exist-12345.invalid")
+        ip = await client._resolve_hostname_to_ip(
+            "this-host-does-not-exist-12345.invalid"
+        )
         assert ip is None
 
 

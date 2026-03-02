@@ -300,7 +300,7 @@ class LabgridClient:
         self._known_exporters_cache = {}
         logger.info("Disconnected from Labgrid Coordinator")
 
-    def _resolve_hostname_to_ip(self, hostname: str) -> Optional[str]:
+    async def _resolve_hostname_to_ip(self, hostname: str) -> Optional[str]:
         """Resolve a hostname to its IP address.
 
         Args:
@@ -310,9 +310,17 @@ class LabgridClient:
             The IP address as string, or None if resolution fails.
         """
         try:
-            ip = socket.gethostbyname(hostname)
-            return ip
-        except socket.gaierror as e:
+            loop = asyncio.get_running_loop()
+            addr_info = await loop.getaddrinfo(
+                hostname,
+                None,
+                family=socket.AF_INET,
+                type=socket.SOCK_STREAM,
+            )
+            if not addr_info:
+                return None
+            return addr_info[0][4][0]
+        except OSError as e:
             logger.debug(f"Could not resolve hostname '{hostname}': {e}")
             return None
 
@@ -382,7 +390,7 @@ class LabgridClient:
                         and not ip_address
                         and res_data.get("avail", True)
                     ):
-                        ip_address = self._resolve_hostname_to_ip(exporter_hostname)
+                        ip_address = await self._resolve_hostname_to_ip(exporter_hostname)
 
                 place_data = self._places_cache.get(exporter_name, {})
                 place_acquired = place_data.get("acquired")
