@@ -6,6 +6,7 @@ periodically on targets, with support for preset-specific scheduled commands.
 """
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -318,6 +319,35 @@ class TestSchedulerServiceStartStop:
 
         # Act
         await scheduler.stop()
+
+
+class TestSchedulerExecution:
+    """Test scheduler execution behavior."""
+
+    @pytest.mark.asyncio
+    async def test_logs_warning_when_target_is_busy(self, scheduler, sample_command, caplog):
+        """Test that busy targets are skipped with a visible warning."""
+        scheduler.set_execute_callback(AsyncMock())
+        scheduler.set_get_targets_callback(
+            AsyncMock(
+                return_value=[
+                    Target(
+                        name="dut-1",
+                        status="available",
+                        acquired_by=None,
+                        resources=[],
+                    )
+                ]
+            )
+        )
+        scheduler._target_locks["dut-1"] = asyncio.Lock()
+        await scheduler._target_locks["dut-1"].acquire()
+
+        with caplog.at_level(logging.WARNING):
+            await scheduler._execute_on_targets_with_preset(sample_command)
+
+        assert "target is busy" in caplog.text
+        scheduler._execute_callback.assert_not_awaited()
 
         # Assert
         assert scheduler._running is False
