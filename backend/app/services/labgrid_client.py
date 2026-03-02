@@ -228,13 +228,14 @@ class LabgridClient:
                                 "(no params available)"
                             )
 
-                        current_resources[exporter_name] = {
-                            res_type: {
-                                "cls": cls_name,
-                                "params": params,
-                                "acquired": acquired,
-                                "avail": avail,
-                            }
+                        if exporter_name not in current_resources:
+                            current_resources[exporter_name] = {}
+
+                        current_resources[exporter_name][res_type] = {
+                            "cls": cls_name,
+                            "params": params,
+                            "acquired": acquired,
+                            "avail": avail,
                         }
 
             # Update known exporters cache with current online exporters
