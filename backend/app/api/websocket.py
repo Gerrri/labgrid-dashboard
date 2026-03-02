@@ -11,7 +11,10 @@ from app.api.connection_manager import manager
 from app.models.target import CommandOutput, ScheduledCommandOutput
 from app.services.command_service import CommandService
 from app.config import LABGRID_DASHBOARD_USER
-from app.services.labgrid_client import LabgridClient
+from app.services.labgrid_client import (
+    LabgridClient,
+    TargetAcquiredByOtherError,
+)
 from app.services.scheduler_service import SchedulerService
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -134,9 +137,10 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
     logger.info(
         f"Executing command '{command.name}' on target '{target_name}' via WebSocket"
     )
+    rollback_target = target.model_dump(mode="json")
 
     try:
-        optimistic_target = target.model_dump(mode="json")
+        optimistic_target = dict(rollback_target)
         optimistic_target["status"] = "acquired"
         optimistic_target["acquired_by"] = LABGRID_DASHBOARD_USER
         await broadcast_target_update(optimistic_target)
@@ -152,6 +156,16 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             timestamp=datetime.now(timezone.utc),
             exit_code=exit_code,
         )
+    except TargetAcquiredByOtherError as e:
+        logger.warning(f"Command execution blocked by existing owner: {e}")
+        rollback_target["status"] = "acquired"
+        rollback_target["acquired_by"] = e.acquired_by
+        output = CommandOutput(
+            command=command.command,
+            output=f"Error executing command: {str(e)}",
+            timestamp=datetime.now(timezone.utc),
+            exit_code=1,
+        )
     except Exception as e:
         logger.error(f"Command execution failed: {e}")
         output = CommandOutput(
@@ -162,9 +176,17 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
         )
     finally:
         if _labgrid_client:
-            updated_target = await _labgrid_client.get_place_info(target_name)
-            if updated_target:
-                await broadcast_target_update(updated_target.model_dump(mode="json"))
+            target_update = rollback_target
+            try:
+                updated_target = await _labgrid_client.get_place_info(target_name)
+                if updated_target:
+                    target_update = updated_target.model_dump(mode="json")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to refresh target state for '{target_name}': {e}"
+                )
+
+            await broadcast_target_update(target_update)
 
     # Send output to the requesting client
     await manager.send_to(
