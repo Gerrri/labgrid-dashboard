@@ -296,6 +296,37 @@ class TestLabgridClientWithMockedSession:
         assert places[0].acquired_by == "other-user"
 
     @pytest.mark.asyncio
+    async def test_get_place_info_preserves_resource_params(
+        self, connected_client: LabgridClient
+    ):
+        """Test that get_place_info returns resource params instead of dropping them."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            }
+        }
+        connected_client._places_cache = {
+            "exporter-1": {
+                "name": "exporter-1",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+            }
+        }
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            target = await connected_client.get_place_info("exporter-1")
+
+        assert target is not None
+        assert target.resources[0].type == "NetworkSerialPort"
+        assert target.resources[0].params == {"host": "192.168.1.100", "port": 5000}
+
+    @pytest.mark.asyncio
     async def test_get_places_with_offline_resource(
         self, connected_client: LabgridClient
     ):
