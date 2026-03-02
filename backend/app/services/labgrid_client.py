@@ -472,9 +472,8 @@ class LabgridClient:
                 for res_type, res_data in exporter_resources.items():
                     resources.append(
                         Resource(
-                            name=res_type,
                             type=res_data.get("cls", res_type),
-                            info=res_data.get("params", {}),
+                            params=res_data.get("params", {}),
                         )
                     )
                     if not res_data.get("avail", False):
@@ -494,7 +493,6 @@ class LabgridClient:
                     status=status,
                     acquired_by=place_acquired,
                     resources=resources,
-                    tags={},
                 )
             return None
         except Exception as e:
