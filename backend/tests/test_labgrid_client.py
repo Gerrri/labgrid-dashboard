@@ -331,6 +331,39 @@ class TestLabgridClientWithMockedSession:
         assert target.resources[0].params == {"host": "192.168.1.100", "port": 5000}
 
     @pytest.mark.asyncio
+    async def test_get_places_uses_place_matches_for_resources(
+        self, connected_client: LabgridClient
+    ):
+        """Test that places are built from coordinator places, not exporter names."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            }
+        }
+        connected_client._places_cache = {
+            "place-1": {
+                "name": "place-1",
+                "acquired": None,
+                "comment": "",
+                "tags": {"web_url": "http://example.invalid"},
+                "matches": ["exporter-1"],
+            }
+        }
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            places = await connected_client.get_places()
+
+        assert len(places) == 1
+        assert places[0].name == "place-1"
+        assert places[0].web_url == "http://example.invalid"
+        assert places[0].resources[0].type == "NetworkSerialPort"
+
+    @pytest.mark.asyncio
     async def test_get_places_with_offline_resource(
         self, connected_client: LabgridClient
     ):
