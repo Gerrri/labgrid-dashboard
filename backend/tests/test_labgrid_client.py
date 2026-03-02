@@ -191,6 +191,14 @@ class TestLabgridClientWithMockedSession:
         connected_client._session.places = {
             "exporter-1": MagicMock(acquired="user@host")
         }
+        connected_client._places_cache = {
+            "exporter-1": {
+                "name": "exporter-1",
+                "acquired": "user@host",
+                "comment": "",
+                "tags": {},
+            }
+        }
 
         # Mock _refresh_cache to prevent it from overwriting our test data
         with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
@@ -288,6 +296,66 @@ class TestLabgridClientWithMockedSession:
 
         result = await connected_client.subscribe_updates(callback)
         assert result is True
+
+    @pytest.mark.asyncio
+    async def test_get_schedulable_places_filters_non_place_targets(
+        self, connected_client: LabgridClient
+    ):
+        """Test scheduler target filtering keeps only real place-backed targets."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            },
+            "exporter-2": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.101", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            },
+        }
+        connected_client._places_cache = {
+            "exporter-1": {
+                "name": "exporter-1",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+            }
+        }
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            schedulable_places = await connected_client.get_schedulable_places()
+
+        assert len(schedulable_places) == 1
+        assert schedulable_places[0].name == "exporter-1"
+
+    @pytest.mark.asyncio
+    async def test_get_schedulable_places_returns_empty_without_places(
+        self, connected_client: LabgridClient
+    ):
+        """Test scheduler target filtering returns no targets when no places exist."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            }
+        }
+        connected_client._places_cache = {}
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            schedulable_places = await connected_client.get_schedulable_places()
+
+        assert schedulable_places == []
 
     @pytest.mark.asyncio
     async def test_subscribe_updates_polls_and_emits_updates(

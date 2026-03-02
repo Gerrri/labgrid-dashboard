@@ -5,6 +5,15 @@ import { StatusBadge } from "./StatusBadge";
 import { CommandPanel } from "../CommandPanel";
 import { TargetSettings } from "../TargetSettings";
 
+/**
+ * Debug logger helper - only logs when VITE_DEBUG_SCHEDULED=true
+ * Memoized to avoid creating new functions on every render
+ */
+const DEBUG_ENABLED = import.meta.env.VITE_DEBUG_SCHEDULED === 'true';
+const debugLog = DEBUG_ENABLED
+  ? (message: string, data?: unknown) => console.log(message, data)
+  : () => {};
+
 interface TooltipState {
   visible: boolean;
   cmdName: string;
@@ -112,10 +121,23 @@ export function TargetRow({
       return <span className="text-muted">-</span>;
     }
 
-    if (target.web_url) {
+    // Validate URL to prevent XSS via javascript:/data: protocols
+    const safeUrl = (() => {
+      if (!target.web_url) return null;
+      try {
+        const url = new URL(target.web_url, window.location.origin);
+        return url.protocol === "http:" || url.protocol === "https:"
+          ? url.toString()
+          : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (safeUrl) {
       return (
         <a
-          href={target.web_url}
+          href={safeUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="ip-link"
@@ -188,21 +210,22 @@ export function TargetRow({
     const CACHE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes in milliseconds
 
     // Debug logging (enable with VITE_DEBUG_SCHEDULED=true)
-    if (import.meta.env.VITE_DEBUG_SCHEDULED === 'true') {
-      console.log(`[${target.name}] renderScheduledOutput for "${cmdName}":`, {
-        hasScheduledOutputs: !!target.scheduled_outputs,
-        scheduledOutputsKeys: target.scheduled_outputs ? Object.keys(target.scheduled_outputs) : [],
-        output: output,
-      });
-    }
+    debugLog(`[${target.name}] renderScheduledOutput for "${cmdName}":`, {
+      hasScheduledOutputs: !!target.scheduled_outputs,
+      scheduledOutputsKeys: target.scheduled_outputs ? Object.keys(target.scheduled_outputs) : [],
+      output: output,
+    });
 
     // No output available
     if (!output) {
       return <span className="text-muted">N/A</span>;
     }
 
-    // Check if cache is expired
-    const outputTimestamp = new Date(output.timestamp).getTime();
+    // Check if cache is expired (guard against invalid timestamps)
+    const outputTimestamp = Date.parse(output.timestamp);
+    if (Number.isNaN(outputTimestamp)) {
+      return <span className="text-muted">N/A</span>;
+    }
     const now = Date.now();
     const isCacheExpired = now - outputTimestamp > CACHE_TIMEOUT_MS;
 
@@ -210,20 +233,18 @@ export function TargetRow({
     const isError = output.exit_code !== 0;
 
     // Debug logging for cache/error checks (enable with VITE_DEBUG_SCHEDULED=true)
-    if (import.meta.env.VITE_DEBUG_SCHEDULED === 'true') {
-      console.log(`[${target.name}] "${cmdName}" cache check:`, {
-        timestamp_raw: output.timestamp,
-        outputTimestamp: outputTimestamp,
-        outputTimestamp_isNaN: isNaN(outputTimestamp),
-        now: now,
-        age_ms: now - outputTimestamp,
-        CACHE_TIMEOUT_MS: CACHE_TIMEOUT_MS,
-        isCacheExpired: isCacheExpired,
-        exit_code: output.exit_code,
-        isError: isError,
-        willShowNA: isError || isCacheExpired,
-      });
-    }
+    debugLog(`[${target.name}] "${cmdName}" cache check:`, {
+      timestamp_raw: output.timestamp,
+      outputTimestamp: outputTimestamp,
+      outputTimestamp_isNaN: Number.isNaN(outputTimestamp),
+      now: now,
+      age_ms: now - outputTimestamp,
+      CACHE_TIMEOUT_MS: CACHE_TIMEOUT_MS,
+      isCacheExpired: isCacheExpired,
+      exit_code: output.exit_code,
+      isError: isError,
+      willShowNA: isError || isCacheExpired,
+    });
 
     if (isError || isCacheExpired) {
       return <span className="text-muted">N/A</span>;

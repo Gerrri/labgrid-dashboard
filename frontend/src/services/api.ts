@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type AxiosRequestConfig } from "axios";
 import type {
   Target,
   TargetsResponse,
@@ -10,14 +10,12 @@ import type {
   PresetDetail,
   TargetPresetResponse,
 } from "../types";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import { buildApiUrl } from "../utils/urlBuilder";
 
 /**
  * Axios instance with base configuration
  */
 const axiosInstance = axios.create({
-  baseURL: API_BASE,
   timeout: 10000,
   headers: {
     "Content-Type": "application/json",
@@ -31,20 +29,24 @@ export const api = {
   /**
    * Get all targets with their current status
    */
-  getTargets: () => axiosInstance.get<TargetsResponse>("/api/targets"),
+  getTargets: (config?: AxiosRequestConfig) =>
+    axiosInstance.get<TargetsResponse>(buildApiUrl("/api/targets"), config),
 
   /**
    * Get a single target by name
    */
   getTarget: (name: string) =>
-    axiosInstance.get<Target>(`/api/targets/${encodeURIComponent(name)}`),
+    axiosInstance.get<Target>(
+      buildApiUrl(`/api/targets/${encodeURIComponent(name)}`),
+    ),
 
   /**
    * Get available commands for a target
    */
-  getCommands: (name: string) =>
+  getCommands: (name: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<Command[]>(
-      `/api/targets/${encodeURIComponent(name)}/commands`,
+      buildApiUrl(`/api/targets/${encodeURIComponent(name)}/commands`),
+      config,
     ),
 
   /**
@@ -52,42 +54,45 @@ export const api = {
    */
   executeCommand: (targetName: string, commandName: string) =>
     axiosInstance.post<CommandOutput>(
-      `/api/targets/${encodeURIComponent(targetName)}/command`,
+      buildApiUrl(`/api/targets/${encodeURIComponent(targetName)}/command`),
       { command_name: commandName },
     ),
 
   /**
    * Check backend health status
    */
-  getHealth: () => axiosInstance.get<HealthResponse>("/api/health"),
+  getHealth: () => axiosInstance.get<HealthResponse>(buildApiUrl("/api/health")),
 
   /**
    * Get scheduled commands configuration
    */
   getScheduledCommands: () =>
     axiosInstance.get<ScheduledCommandsResponse>(
-      "/api/targets/scheduled-commands",
+      buildApiUrl("/api/targets/scheduled-commands"),
     ),
 
   /**
    * Get all available presets
    */
-  getPresets: () => axiosInstance.get<PresetsResponse>("/api/presets"),
+  getPresets: (config?: AxiosRequestConfig) =>
+    axiosInstance.get<PresetsResponse>(buildApiUrl("/api/presets"), config),
 
   /**
    * Get detailed information about a preset including its commands
    */
-  getPresetDetail: (presetId: string) =>
+  getPresetDetail: (presetId: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<PresetDetail>(
-      `/api/presets/${encodeURIComponent(presetId)}`,
+      buildApiUrl(`/api/presets/${encodeURIComponent(presetId)}`),
+      config,
     ),
 
   /**
    * Get the current preset for a target
    */
-  getTargetPreset: (targetName: string) =>
+  getTargetPreset: (targetName: string, config?: AxiosRequestConfig) =>
     axiosInstance.get<TargetPresetResponse>(
-      `/api/targets/${encodeURIComponent(targetName)}/preset`,
+      buildApiUrl(`/api/targets/${encodeURIComponent(targetName)}/preset`),
+      config,
     ),
 
   /**
@@ -95,7 +100,7 @@ export const api = {
    */
   setTargetPreset: (targetName: string, presetId: string) =>
     axiosInstance.put<TargetPresetResponse>(
-      `/api/targets/${encodeURIComponent(targetName)}/preset`,
+      buildApiUrl(`/api/targets/${encodeURIComponent(targetName)}/preset`),
       { preset_id: presetId },
     ),
 };

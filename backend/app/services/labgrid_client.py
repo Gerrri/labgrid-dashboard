@@ -415,6 +415,36 @@ class LabgridClient:
             logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
+    async def get_schedulable_places(self) -> List[Target]:
+        """Get targets that map to real coordinator places.
+
+        Scheduler commands use `labgrid-client -p <place> ...`, which only works
+        for existing places. Targets backed only by exporter resources are filtered
+        out here to avoid acquire errors.
+
+        Returns:
+            List of targets with names present in the coordinator place cache.
+        """
+        targets = await self.get_places()
+        if not targets:
+            return []
+
+        if not self._places_cache:
+            logger.info(
+                "Scheduler: no places defined in coordinator; skipping scheduled command execution"
+            )
+            return []
+
+        schedulable_targets = [t for t in targets if t.name in self._places_cache]
+        skipped_targets = len(targets) - len(schedulable_targets)
+        if skipped_targets > 0:
+            logger.info(
+                "Scheduler: skipping %d target(s) without matching coordinator place",
+                skipped_targets,
+            )
+
+        return schedulable_targets
+
     async def get_place_info(self, name: str) -> Optional[Target]:
         """Get detailed information about a specific place.
 
