@@ -5,6 +5,7 @@ WebSocket endpoint for real-time communication.
 import json
 import logging
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any, Dict
 
 from app.api.connection_manager import manager
@@ -131,8 +132,12 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
         return
 
     # Execute the command via Labgrid Coordinator
+    started_at = perf_counter()
     logger.info(
-        f"Executing command '{command.name}' on target '{target_name}' via WebSocket"
+        "WebSocket command received: target='%s' requested='%s' resolved='%s'",
+        target_name,
+        command_name,
+        command.command,
     )
 
     try:
@@ -145,6 +150,15 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
         result_output, exit_code = await _labgrid_client.execute_command(
             target_name, command.command
         )
+        duration_ms = int((perf_counter() - started_at) * 1000)
+        log_method = logger.info if exit_code == 0 else logger.warning
+        log_method(
+            "WebSocket command finished: target='%s' requested='%s' exit_code=%d duration_ms=%d",
+            target_name,
+            command_name,
+            exit_code,
+            duration_ms,
+        )
 
         output = CommandOutput(
             command=command.command,
@@ -153,7 +167,13 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             exit_code=exit_code,
         )
     except Exception as e:
-        logger.error(f"Command execution failed: {e}")
+        duration_ms = int((perf_counter() - started_at) * 1000)
+        logger.exception(
+            "WebSocket command failed: target='%s' requested='%s' duration_ms=%d",
+            target_name,
+            command_name,
+            duration_ms,
+        )
         output = CommandOutput(
             command=command.command,
             output=f"Error executing command: {str(e)}",

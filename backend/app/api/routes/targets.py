@@ -4,6 +4,7 @@ REST API routes for target and preset operations.
 
 import logging
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import List
 
 from app.api.websocket import broadcast_target_update
@@ -237,7 +238,13 @@ async def execute_command(
         )
 
     # Execute the command via Labgrid Coordinator
-    logger.info(f"Executing command '{command.name}' on target '{name}'")
+    started_at = perf_counter()
+    logger.info(
+        "Command request received: target='%s' requested='%s' resolved='%s'",
+        name,
+        request.command_name,
+        command.command,
+    )
 
     try:
         optimistic_target = target.model_dump(mode="json")
@@ -247,6 +254,15 @@ async def execute_command(
 
         # Execute command through the labgrid client
         result_output, exit_code = await client.execute_command(name, command.command)
+        duration_ms = int((perf_counter() - started_at) * 1000)
+        log_method = logger.info if exit_code == 0 else logger.warning
+        log_method(
+            "Command request finished: target='%s' requested='%s' exit_code=%d duration_ms=%d",
+            name,
+            request.command_name,
+            exit_code,
+            duration_ms,
+        )
 
         output = CommandOutput(
             command=command.command,
@@ -255,7 +271,13 @@ async def execute_command(
             exit_code=exit_code,
         )
     except Exception as e:
-        logger.error(f"Command execution failed: {e}")
+        duration_ms = int((perf_counter() - started_at) * 1000)
+        logger.exception(
+            "Command request failed: target='%s' requested='%s' duration_ms=%d",
+            name,
+            request.command_name,
+            duration_ms,
+        )
         output = CommandOutput(
             command=command.command,
             output=f"Error executing command: {str(e)}",

@@ -13,6 +13,7 @@ import contextlib
 import logging
 import os
 import socket
+from time import perf_counter
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from app.config import LABGRID_DASHBOARD_USER, get_settings
@@ -751,6 +752,13 @@ class LabgridClient:
             logger.warning("Not connected to coordinator")
             return ("Error: Not connected to coordinator", 1)
 
+        started_at = perf_counter()
+        logger.info(
+            "Command dispatch started: place='%s' command='%s'",
+            place_name,
+            command,
+        )
+
         try:
             # Step 1: Acquire the target
             await self.acquire_target(place_name)
@@ -758,6 +766,12 @@ class LabgridClient:
             try:
                 # Step 2: Execute the command
                 output = await self._execute_via_labgrid_client(place_name, command)
+                duration_ms = int((perf_counter() - started_at) * 1000)
+                logger.info(
+                    "Command execution finished: place='%s' duration_ms=%d",
+                    place_name,
+                    duration_ms,
+                )
                 return (output, 0)
             finally:
                 # Step 3: Always release with retry
@@ -772,16 +786,39 @@ class LabgridClient:
             # Re-raise for API layer to handle
             raise
         except FileNotFoundError as e:
-            logger.error(f"labgrid-client not found: {e}")
+            duration_ms = int((perf_counter() - started_at) * 1000)
+            logger.error(
+                "Command dispatch failed: place='%s' reason='labgrid-client-missing' duration_ms=%d error=%s",
+                place_name,
+                duration_ms,
+                e,
+            )
             return ("Error: labgrid-client CLI not found", 1)
         except TimeoutError as e:
-            logger.error(f"Command timeout on {place_name}: {e}")
+            duration_ms = int((perf_counter() - started_at) * 1000)
+            logger.error(
+                "Command dispatch failed: place='%s' reason='timeout' duration_ms=%d error=%s",
+                place_name,
+                duration_ms,
+                e,
+            )
             return (f"Error: {str(e)}", 1)
         except RuntimeError as e:
-            logger.error(f"labgrid-client error on {place_name}: {e}")
+            duration_ms = int((perf_counter() - started_at) * 1000)
+            logger.error(
+                "Command dispatch failed: place='%s' reason='labgrid-client-error' duration_ms=%d error=%s",
+                place_name,
+                duration_ms,
+                e,
+            )
             return (f"Error: {str(e)}", 1)
         except Exception as e:
-            logger.error(f"Failed to execute command on {place_name}: {e}")
+            duration_ms = int((perf_counter() - started_at) * 1000)
+            logger.exception(
+                "Command dispatch failed: place='%s' reason='unexpected' duration_ms=%d",
+                place_name,
+                duration_ms,
+            )
             return (f"Error: {str(e)}", 1)
 
     def _get_place_resources_from_cache(self, place_name: str) -> List[Dict[str, Any]]:
@@ -830,6 +867,14 @@ class LabgridClient:
             TimeoutError: If command times out.
             RuntimeError: If labgrid-client returns an error.
         """
+        timeout = get_settings().labgrid_command_timeout
+        proc_started_at = perf_counter()
+        logger.info(
+            "Command subprocess started: place='%s' timeout_s=%d",
+            place_name,
+            timeout,
+        )
+
         # Use 'labgrid-client ssh' with the command as additional argument
         # This requires an SSHDriver to be configured for the target
         proc = await asyncio.create_subprocess_exec(
@@ -846,15 +891,29 @@ class LabgridClient:
         )
 
         try:
-            timeout = get_settings().labgrid_command_timeout
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:
             proc.kill()
+            duration_ms = int((perf_counter() - proc_started_at) * 1000)
+            logger.error(
+                "Command subprocess timed out: place='%s' timeout_s=%d duration_ms=%d",
+                place_name,
+                timeout,
+                duration_ms,
+            )
             raise TimeoutError(f"Command timeout after {timeout}s")
 
+        duration_ms = int((perf_counter() - proc_started_at) * 1000)
+
         if proc.returncode != 0:
+            logger.warning(
+                "Command subprocess returned non-zero exit code: place='%s' returncode=%d duration_ms=%d",
+                place_name,
+                proc.returncode,
+                duration_ms,
+            )
             error = stderr.decode("utf-8", errors="replace")
             output = stdout.decode("utf-8", errors="replace")
             # If there's stdout content, return it with the error appended
@@ -864,6 +923,12 @@ class LabgridClient:
                 )
             raise RuntimeError(f"labgrid-client error: {error}")
 
+        logger.info(
+            "Command subprocess completed: place='%s' returncode=%d duration_ms=%d",
+            place_name,
+            proc.returncode,
+            duration_ms,
+        )
         return stdout.decode("utf-8", errors="replace").strip()
 
     def _parse_places(self, places_data: Dict[str, Any]) -> List[Target]:
