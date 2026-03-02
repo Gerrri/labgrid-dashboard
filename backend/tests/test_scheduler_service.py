@@ -332,9 +332,12 @@ class TestSchedulerExecution:
     """Test scheduler execution behavior."""
 
     @pytest.mark.asyncio
-    async def test_logs_warning_when_target_is_busy(self, scheduler, sample_command, caplog):
-        """Test that busy targets are skipped with a visible warning."""
-        scheduler.set_execute_callback(AsyncMock())
+    async def test_waits_for_busy_target_then_executes(
+        self, scheduler, sample_command, caplog
+    ):
+        """Test that busy targets are delayed and executed after the lock clears."""
+        execute_callback = AsyncMock(return_value=("ok", 0))
+        scheduler.set_execute_callback(execute_callback)
         scheduler.set_get_targets_callback(
             AsyncMock(
                 return_value=[
@@ -351,10 +354,17 @@ class TestSchedulerExecution:
         await scheduler._target_locks["dut-1"].acquire()
 
         with caplog.at_level(logging.WARNING):
-            await scheduler._execute_on_targets_with_preset(sample_command)
+            execution_task = asyncio.create_task(
+                scheduler._execute_on_targets_with_preset(sample_command)
+            )
+            await asyncio.sleep(0)
+            execute_callback.assert_not_awaited()
+            scheduler._target_locks["dut-1"].release()
+            await execution_task
 
         assert "target is busy" in caplog.text
-        scheduler._execute_callback.assert_not_awaited()
+        assert "waiting for current command to finish" in caplog.text
+        execute_callback.assert_awaited_once_with("dut-1", sample_command.command)
 
         # Assert
         assert scheduler._running is False
@@ -513,7 +523,7 @@ class TestSchedulerServiceExecution:
     async def test_execute_on_targets_with_target_lock(
         self, scheduler, sample_command, sample_target
     ):
-        """Test that target locks prevent concurrent execution."""
+        """Test that target locks serialize concurrent execution."""
         # Arrange
         scheduler.set_commands([sample_command])
 
@@ -541,8 +551,8 @@ class TestSchedulerServiceExecution:
         await task1
         await task2
 
-        # Assert - should only execute once due to lock
-        assert execute_callback.call_count == 1
+        # Assert - both runs execute, but not at the same time
+        assert execute_callback.call_count == 2
 
     @pytest.mark.asyncio
     async def test_execute_on_targets_notify_callback_error(

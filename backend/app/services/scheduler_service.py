@@ -284,12 +284,11 @@ class SchedulerService:
 
                 target_lock = self._target_locks[target.name]
 
-                # Try to acquire lock, skip if already locked (another command is running)
+                # Queue behind the current command instead of dropping this run.
                 if target_lock.locked():
                     logger.warning(
-                        f"Skipping '{cmd.name}' on '{target.name}': target is busy"
+                        f"Delaying '{cmd.name}' on '{target.name}': target is busy, waiting for current command to finish"
                     )
-                    continue
 
                 # Execute with lock to prevent concurrent access
                 async with target_lock:
