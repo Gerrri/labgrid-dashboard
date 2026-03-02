@@ -70,6 +70,7 @@ class LabgridClient:
         self._known_exporters_cache: Dict[str, Dict[str, Any]] = {}
         self._poll_interval = get_settings().labgrid_poll_interval_seconds
         self._poll_task: Optional[asyncio.Task] = None
+        self._command_locks: Dict[str, asyncio.Lock] = {}
 
     @property
     def connected(self) -> bool:
@@ -735,22 +736,22 @@ class LabgridClient:
             logger.warning("Not connected to coordinator")
             return ("Error: Not connected to coordinator", 1)
 
-        try:
-            # Step 1: Acquire the target
-            await self.acquire_target(place_name)
+        target_lock = self._command_locks.setdefault(place_name, asyncio.Lock())
 
-            try:
-                # Step 2: Execute the command
-                output = await self._execute_via_labgrid_client(place_name, command)
-                return (output, 0)
-            finally:
-                # Step 3: Always release with retry
-                released = await self.release_target_with_retry(place_name)
-                if not released:
-                    # Log but don't fail the command - it already executed
-                    logger.error(
-                        f"Command succeeded but release failed for '{place_name}'"
-                    )
+        try:
+            async with target_lock:
+                acquired_here = await self.acquire_target(place_name)
+
+                try:
+                    output = await self._execute_via_labgrid_client(place_name, command)
+                    return (output, 0)
+                finally:
+                    if acquired_here:
+                        released = await self.release_target_with_retry(place_name)
+                        if not released:
+                            logger.error(
+                                f"Command succeeded but release failed for '{place_name}'"
+                            )
 
         except TargetAcquiredByOtherError:
             # Re-raise for API layer to handle
