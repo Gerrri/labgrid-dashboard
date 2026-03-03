@@ -165,6 +165,8 @@ docker compose up -d
 ### Staging Mode
 Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands are executed via `labgrid-client` CLI, which properly routes through: Backend → Coordinator → Exporter → DUT.
 
+If the backend starts before the coordinator becomes reachable, it remains available in degraded mode and retries the coordinator connection automatically in the background.
+
 ```bash
 # Start with real command execution
 docker compose --profile staging up -d --build

@@ -7,7 +7,7 @@ Handles startup/shutdown lifecycle, CORS configuration, and route registration.
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import AsyncGenerator
 
 from app.api import api_router
@@ -18,7 +18,7 @@ from app.api.routes.targets import set_preset_service as set_targets_preset_serv
 from app.api.routes.targets import (
     set_scheduler_service as set_targets_scheduler_service,
 )
-from app.api.websocket import broadcast_target_update
+from app.api.websocket import broadcast_target_update, broadcast_targets_list
 from app.api.websocket import set_command_service as set_ws_command_service
 from app.api.websocket import set_labgrid_client as set_ws_labgrid_client
 from app.api.websocket import set_scheduler_service as set_ws_scheduler_service
@@ -37,6 +37,9 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+COORDINATOR_RECONNECT_INITIAL_DELAY_SECONDS = 5
+COORDINATOR_RECONNECT_MAX_DELAY_SECONDS = 60
 
 # Global service instances
 labgrid_client: LabgridClient | None = None
@@ -61,6 +64,76 @@ async def wait_for_targets_ready(
         await asyncio.sleep(poll_interval_seconds)
 
 
+async def sync_coordinator_runtime(
+    client: LabgridClient,
+    timeout_seconds: int,
+    poll_interval_seconds: int,
+    target_update_callback,
+) -> None:
+    """Wait for coordinator data and restore target update subscriptions."""
+    logger.info("Waiting for coordinator synchronization...")
+    targets_ready = await wait_for_targets_ready(
+        client,
+        timeout_seconds,
+        poll_interval_seconds,
+    )
+    if targets_ready:
+        logger.info("Coordinator synchronization complete")
+    else:
+        logger.warning(
+            "Coordinator synchronization timed out, continuing with current state"
+        )
+
+    updates_enabled = await client.subscribe_updates(target_update_callback)
+    if not updates_enabled:
+        logger.warning("Target update subscription disabled (no coordinator connection)")
+        return
+
+    logger.info("Coordinator target updates enabled")
+    await broadcast_targets_list()
+
+
+async def reconnect_coordinator_in_background(
+    client: LabgridClient,
+    timeout_seconds: int,
+    poll_interval_seconds: int,
+    target_update_callback,
+) -> None:
+    """Retry coordinator connection after startup failures until it succeeds."""
+    retry_delay = COORDINATOR_RECONNECT_INITIAL_DELAY_SECONDS
+
+    while True:
+        logger.info(
+            "Coordinator unavailable during startup, retrying in %s seconds",
+            retry_delay,
+        )
+
+        await asyncio.sleep(retry_delay)
+
+        try:
+            await client.connect()
+            logger.info("Coordinator reconnect succeeded")
+            await sync_coordinator_runtime(
+                client,
+                timeout_seconds,
+                poll_interval_seconds,
+                target_update_callback,
+            )
+            return
+        except asyncio.CancelledError:
+            raise
+        except LabgridConnectionError as exc:
+            logger.warning("Coordinator reconnect attempt failed: %s", exc)
+        except Exception:
+            logger.exception("Unexpected error during coordinator reconnect attempt")
+
+        await client.disconnect()
+        retry_delay = min(
+            retry_delay * 2,
+            COORDINATOR_RECONNECT_MAX_DELAY_SECONDS,
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle - startup and shutdown events.
@@ -76,6 +149,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     settings = get_settings()
     logger.info("Starting Labgrid Dashboard Backend...")
+    reconnect_task: asyncio.Task[None] | None = None
 
     # Initialize command service
     command_service = CommandService(commands_file=settings.commands_file)
@@ -111,19 +185,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "Failed to connect to coordinator during startup. "
             "Starting API in degraded mode."
         )
-    else:
-        logger.info("Waiting for coordinator synchronization...")
-        targets_ready = await wait_for_targets_ready(
-            labgrid_client,
-            settings.coordinator_timeout,
-            settings.labgrid_poll_interval_seconds,
-        )
-        if targets_ready:
-            logger.info("Coordinator synchronization complete")
-        else:
-            logger.warning(
-                "Coordinator synchronization timed out, starting scheduler anyway"
-            )
+        await labgrid_client.disconnect()
 
     # Initialize scheduler service with preset support
     scheduler_service = SchedulerService()
@@ -150,14 +212,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     set_ws_command_service(command_service)
     set_ws_scheduler_service(scheduler_service)
 
-    await scheduler_service.start()
-
     async def handle_target_update(target_name: str, target_data: dict) -> None:
         await broadcast_target_update(target_data)
 
-    updates_enabled = await labgrid_client.subscribe_updates(handle_target_update)
-    if not updates_enabled:
-        logger.warning("Target update subscription disabled (no coordinator connection)")
+    if labgrid_client.connected:
+        await sync_coordinator_runtime(
+            labgrid_client,
+            settings.coordinator_timeout,
+            settings.labgrid_poll_interval_seconds,
+            handle_target_update,
+        )
+
+    await scheduler_service.start()
+
+    if not labgrid_client.connected:
+        reconnect_task = asyncio.create_task(
+            reconnect_coordinator_in_background(
+                labgrid_client,
+                settings.coordinator_timeout,
+                settings.labgrid_poll_interval_seconds,
+                handle_target_update,
+            )
+        )
 
     logger.info("Labgrid Dashboard Backend started successfully")
 
@@ -168,6 +244,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if scheduler_service:
         await scheduler_service.stop()
+
+    if reconnect_task and not reconnect_task.done():
+        reconnect_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await reconnect_task
 
     if labgrid_client:
         await labgrid_client.disconnect()
