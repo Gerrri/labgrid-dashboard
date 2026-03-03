@@ -16,6 +16,9 @@ import type {
 } from "./types";
 import "./App.css";
 
+const APP_VERSION =
+  typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.1.0";
+
 /**
  * Main application component
  */
@@ -254,6 +257,9 @@ function App() {
         <div className="footer-info">
           <span className="target-count">
             {totalTargets} target{totalTargets !== 1 ? "s" : ""} found
+          </span>
+          <span className="app-version" aria-label="Application version">
+            v{APP_VERSION}
           </span>
           <ConnectionIndicators
             websocketConnected={connected}

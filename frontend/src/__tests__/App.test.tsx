@@ -127,4 +127,12 @@ describe('App', () => {
       expect(footerCount).toHaveTextContent('1 target found');
     });
   });
+
+  it('shows the application version in the footer', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('v0.1.0')).toBeInTheDocument();
+    });
+  });
 });

@@ -289,6 +289,13 @@
   font-weight: 500;
 }
 
+.app-version {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  opacity: 0.72;
+  white-space: nowrap;
+}
+
 /* Connection Indicators */
 .connection-indicators {
   display: flex;
