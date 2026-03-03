@@ -27,7 +27,6 @@ function App() {
     refetch,
     updateTargetScheduledOutput,
     updateTargetFromWebSocket,
-    setTargetStatus,
   } = usePresetsWithTargets();
   const [healthInfo, setHealthInfo] = useState<HealthResponse | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -81,13 +80,10 @@ function App() {
   );
 
   const handleCommandStart = useCallback(
-    (targetName: string) => {
-      const applied = setTargetStatus(targetName, "acquired");
-      if (!applied) {
-        refetch();
-      }
+    (_targetName: string) => {
+      // Target state is driven by backend WebSocket updates.
     },
-    [refetch, setTargetStatus],
+    [],
   );
 
   const handleScheduledOutput = useCallback(
@@ -128,9 +124,20 @@ function App() {
   const handleTargetsList = useCallback(
     (targetsList: Target[]) => {
       console.log("Received targets list via WebSocket:", targetsList.length);
-      refetch();
+      let shouldRefetch = targetsList.length !== totalTargets;
+
+      for (const target of targetsList) {
+        const applied = updateTargetFromWebSocket(target);
+        if (!applied) {
+          shouldRefetch = true;
+        }
+      }
+
+      if (shouldRefetch) {
+        refetch();
+      }
     },
-    [refetch],
+    [refetch, totalTargets, updateTargetFromWebSocket],
   );
 
   const handleConnectionChange = useCallback((connected: boolean) => {
@@ -162,14 +169,10 @@ function App() {
   }, [refetch]);
 
   const handleCommandComplete = useCallback(
-    (targetName: string, output: CommandOutput) => {
-      console.log(`Command completed on ${targetName}:`, output.command);
-      const applied = setTargetStatus(targetName, "available", null);
-      if (!applied) {
-        refetch();
-      }
+    (_targetName: string, _output: CommandOutput) => {
+      // Final state should come from the backend after command completion.
     },
-    [refetch, setTargetStatus],
+    [],
   );
 
   // Handler to update command outputs for a specific target

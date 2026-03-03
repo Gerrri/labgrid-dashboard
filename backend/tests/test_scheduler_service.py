@@ -6,6 +6,7 @@ periodically on targets, with support for preset-specific scheduled commands.
 """
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -285,6 +286,13 @@ class TestSchedulerServiceGettingData:
         # Assert
         assert all_outputs == outputs
         assert all_outputs is not scheduler._outputs  # Should be a copy
+        assert all_outputs["uptime"] is not scheduler._outputs["uptime"]
+
+    def test_get_next_retry_delay_caps_backoff(self, scheduler):
+        """Test exponential retry delay growth is capped."""
+        assert scheduler._get_next_retry_delay(5) == 10
+        assert scheduler._get_next_retry_delay(10) == 20
+        assert scheduler._get_next_retry_delay(40) == 60
 
 
 class TestSchedulerServiceStartStop:
@@ -318,6 +326,45 @@ class TestSchedulerServiceStartStop:
 
         # Act
         await scheduler.stop()
+
+
+class TestSchedulerExecution:
+    """Test scheduler execution behavior."""
+
+    @pytest.mark.asyncio
+    async def test_waits_for_busy_target_then_executes(
+        self, scheduler, sample_command, caplog
+    ):
+        """Test that busy targets are delayed and executed after the lock clears."""
+        execute_callback = AsyncMock(return_value=("ok", 0))
+        scheduler.set_execute_callback(execute_callback)
+        scheduler.set_get_targets_callback(
+            AsyncMock(
+                return_value=[
+                    Target(
+                        name="dut-1",
+                        status="available",
+                        acquired_by=None,
+                        resources=[],
+                    )
+                ]
+            )
+        )
+        scheduler._target_locks["dut-1"] = asyncio.Lock()
+        await scheduler._target_locks["dut-1"].acquire()
+
+        with caplog.at_level(logging.WARNING):
+            execution_task = asyncio.create_task(
+                scheduler._execute_on_targets_with_preset(sample_command)
+            )
+            await asyncio.sleep(0)
+            execute_callback.assert_not_awaited()
+            scheduler._target_locks["dut-1"].release()
+            await execution_task
+
+        assert "target is busy" in caplog.text
+        assert "waiting for current command to finish" in caplog.text
+        execute_callback.assert_awaited_once_with("dut-1", sample_command.command)
 
         # Assert
         assert scheduler._running is False
@@ -476,7 +523,7 @@ class TestSchedulerServiceExecution:
     async def test_execute_on_targets_with_target_lock(
         self, scheduler, sample_command, sample_target
     ):
-        """Test that target locks prevent concurrent execution."""
+        """Test that target locks serialize concurrent execution."""
         # Arrange
         scheduler.set_commands([sample_command])
 
@@ -504,8 +551,8 @@ class TestSchedulerServiceExecution:
         await task1
         await task2
 
-        # Assert - should only execute once due to lock
-        assert execute_callback.call_count == 1
+        # Assert - both runs execute, but not at the same time
+        assert execute_callback.call_count == 2
 
     @pytest.mark.asyncio
     async def test_execute_on_targets_notify_callback_error(

@@ -53,12 +53,16 @@ class TestLabgridClient:
         client._connected = True
         client._resources_cache = {"test": {}}
         client._places_cache = {"test": {}}
+        client._known_exporters_cache = {"test": {"SomeResource": {"avail": False}}}
 
         await client.disconnect()
 
         assert client.connected is False
         assert client._resources_cache == {}
         assert client._places_cache == {}
+        assert client._known_exporters_cache == {
+            "test": {"SomeResource": {"avail": False}}
+        }
 
     @pytest.mark.asyncio
     async def test_get_places_returns_empty_when_not_connected(
@@ -98,17 +102,21 @@ class TestLabgridClient:
         assert exit_code == 1
         assert "Not connected" in output
 
-    def test_resolve_hostname_to_ip(self, client: LabgridClient):
+    @pytest.mark.asyncio
+    async def test_resolve_hostname_to_ip(self, client: LabgridClient):
         """Test hostname resolution."""
         # localhost should resolve to 127.0.0.1
-        ip = client._resolve_hostname_to_ip("localhost")
+        ip = await client._resolve_hostname_to_ip("localhost")
         assert ip == "127.0.0.1"
 
-    def test_resolve_hostname_to_ip_returns_none_for_invalid(
+    @pytest.mark.asyncio
+    async def test_resolve_hostname_to_ip_returns_none_for_invalid(
         self, client: LabgridClient
     ):
         """Test that invalid hostname returns None."""
-        ip = client._resolve_hostname_to_ip("this-host-does-not-exist-12345.invalid")
+        ip = await client._resolve_hostname_to_ip(
+            "this-host-does-not-exist-12345.invalid"
+        )
         assert ip is None
 
 
@@ -171,6 +179,40 @@ class TestLabgridClientWithMockedSession:
         assert len(places) == 1
         assert places[0].name == "exporter-1"
         assert places[0].status == "available"
+
+    @pytest.mark.asyncio
+    async def test_refresh_cache_accumulates_multiple_resources_per_exporter(
+        self, connected_client: LabgridClient
+    ):
+        """Test that _refresh_cache keeps all resources for the same exporter."""
+        serial_port = self._create_mock_resource_entry(
+            cls_name="NetworkSerialPort",
+            params={"host": "192.168.1.100", "port": 5000},
+            acquired=None,
+            avail=True,
+        )
+        usb_port = self._create_mock_resource_entry(
+            cls_name="USBSerialPort",
+            params={"path": "/dev/ttyUSB0"},
+            acquired=None,
+            avail=True,
+        )
+
+        connected_client._session.resources = {
+            "exporter-1": {
+                "default": {
+                    "NetworkSerialPort": serial_port,
+                    "USBSerialPort": usb_port,
+                }
+            }
+        }
+
+        await connected_client._refresh_cache()
+
+        assert set(connected_client._resources_cache["exporter-1"]) == {
+            "NetworkSerialPort",
+            "USBSerialPort",
+        }
 
     @pytest.mark.asyncio
     async def test_get_places_with_acquired_resource(
@@ -260,6 +302,89 @@ class TestLabgridClientWithMockedSession:
         assert len(places) == 1
         assert places[0].status == "acquired"
         assert places[0].acquired_by == "other-user"
+
+    @pytest.mark.asyncio
+    async def test_get_place_info_preserves_resource_params(
+        self, connected_client: LabgridClient
+    ):
+        """Test that get_place_info returns resource params instead of dropping them."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            }
+        }
+        connected_client._places_cache = {
+            "exporter-1": {
+                "name": "exporter-1",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+            }
+        }
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            target = await connected_client.get_place_info("exporter-1")
+
+        assert target is not None
+        assert target.resources[0].type == "NetworkSerialPort"
+        assert target.resources[0].params == {"host": "192.168.1.100", "port": 5000}
+
+    @pytest.mark.asyncio
+    async def test_get_places_uses_place_matches_for_resources(
+        self, connected_client: LabgridClient
+    ):
+        """Test that places are built from coordinator places, not exporter names."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                }
+            }
+        }
+        connected_client._places_cache = {
+            "place-1": {
+                "name": "place-1",
+                "acquired": None,
+                "comment": "",
+                "tags": {"web_url": "http://example.invalid"},
+                "matches": ["exporter-1"],
+            }
+        }
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            places = await connected_client.get_places()
+
+        assert len(places) == 1
+        assert places[0].name == "place-1"
+        assert places[0].web_url == "http://example.invalid"
+        assert places[0].resources[0].type == "NetworkSerialPort"
+
+    @pytest.mark.asyncio
+    async def test_refresh_cache_keeps_empty_params_resources_online(
+        self, connected_client: LabgridClient
+    ):
+        """Test that empty params alone do not mark a resource offline."""
+        empty_params_resource = self._create_mock_resource_entry(
+            cls_name="SomeResource",
+            params={},
+            acquired=None,
+            avail=True,
+        )
+        connected_client._session.resources = {
+            "exporter-1": {"default": {"SomeResource": empty_params_resource}}
+        }
+
+        await connected_client._refresh_cache()
+
+        assert connected_client._resources_cache["exporter-1"]["SomeResource"]["avail"] is True
 
     @pytest.mark.asyncio
     async def test_get_places_with_offline_resource(

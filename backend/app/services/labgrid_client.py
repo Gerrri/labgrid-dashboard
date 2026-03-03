@@ -70,6 +70,7 @@ class LabgridClient:
         self._known_exporters_cache: Dict[str, Dict[str, Any]] = {}
         self._poll_interval = get_settings().labgrid_poll_interval_seconds
         self._poll_task: Optional[asyncio.Task] = None
+        self._command_locks: Dict[str, asyncio.Lock] = {}
 
     @property
     def connected(self) -> bool:
@@ -221,20 +222,21 @@ class LabgridClient:
 
                         # If params couldn't be loaded, the exporter is likely offline
                         # Labgrid returns the exporter but with empty/missing data
-                        if not params_available or not params:
+                        if not params_available:
                             avail = False
                             logger.debug(
                                 f"Exporter '{exporter_name}' marked offline "
                                 "(no params available)"
                             )
 
-                        current_resources[exporter_name] = {
-                            res_type: {
-                                "cls": cls_name,
-                                "params": params,
-                                "acquired": acquired,
-                                "avail": avail,
-                            }
+                        if exporter_name not in current_resources:
+                            current_resources[exporter_name] = {}
+
+                        current_resources[exporter_name][res_type] = {
+                            "cls": cls_name,
+                            "params": params,
+                            "acquired": acquired,
+                            "avail": avail,
                         }
 
             # Update known exporters cache with current online exporters
@@ -262,6 +264,7 @@ class LabgridClient:
                     "acquired": getattr(place_obj, "acquired", None),
                     "comment": getattr(place_obj, "comment", ""),
                     "tags": dict(getattr(place_obj, "tags", {})),
+                    "matches": list(getattr(place_obj, "matches", [])),
                 }
 
             online_count = len(current_exporter_names)
@@ -295,10 +298,9 @@ class LabgridClient:
         self._connected = False
         self._resources_cache = {}
         self._places_cache = {}
-        self._known_exporters_cache = {}
         logger.info("Disconnected from Labgrid Coordinator")
 
-    def _resolve_hostname_to_ip(self, hostname: str) -> Optional[str]:
+    async def _resolve_hostname_to_ip(self, hostname: str) -> Optional[str]:
         """Resolve a hostname to its IP address.
 
         Args:
@@ -308,9 +310,17 @@ class LabgridClient:
             The IP address as string, or None if resolution fails.
         """
         try:
-            ip = socket.gethostbyname(hostname)
-            return ip
-        except socket.gaierror as e:
+            loop = asyncio.get_running_loop()
+            addr_info = await loop.getaddrinfo(
+                hostname,
+                None,
+                family=socket.AF_INET,
+                type=socket.SOCK_STREAM,
+            )
+            if not addr_info:
+                return None
+            return addr_info[0][4][0]
+        except OSError as e:
             logger.debug(f"Could not resolve hostname '{hostname}': {e}")
             return None
 
@@ -327,40 +337,47 @@ class LabgridClient:
         try:
             # Refresh cache and return parsed places
             await self._refresh_cache()
-
-            # Convert resources cache to targets
-            # In labgrid, resources are organized by exporter name
             targets = []
-            for exporter_name, exporter_resources in self._resources_cache.items():
-                # Collect all resources for this exporter
+            place_infos = self._places_cache.values()
+            if not self._places_cache:
+                place_infos = (
+                    {
+                        "name": exporter_name,
+                        "acquired": None,
+                        "comment": "",
+                        "tags": {},
+                        "matches": [],
+                    }
+                    for exporter_name in self._resources_cache
+                )
+
+            for place_info in place_infos:
+                place_name = place_info.get("name", "")
+                resource_entries = self._get_place_resource_entries(place_name)
+                if not place_name or not resource_entries:
+                    continue
+
                 resources_list = []
-                ip_address = None
+                tags = place_info.get("tags", {})
+                ip_address = tags.get("ip")
                 acquired_by = None
-                place_acquired_flag = False
                 has_acquired_resource = False
                 is_available = True
-
-                place_info = self._places_cache.get(exporter_name, {})
                 place_acquired = place_info.get("acquired")
                 if isinstance(place_acquired, str):
                     place_acquired = place_acquired.strip()
-                if place_acquired:
-                    place_acquired_flag = True
-                    if isinstance(place_acquired, str):
-                        acquired_by = place_acquired
+                if place_acquired and isinstance(place_acquired, str):
+                    acquired_by = place_acquired
 
-                for res_type, res_data in exporter_resources.items():
+                for exporter_name, res_type, res_data in resource_entries:
                     params = res_data.get("params", {})
 
-                    # Track acquired status
                     if res_data.get("acquired"):
                         has_acquired_resource = True
 
-                    # Track availability
                     if not res_data.get("avail", True):
                         is_available = False
 
-                    # Create Resource with correct field names (type and params)
                     resources_list.append(
                         Resource(
                             type=res_data.get("cls", res_type),
@@ -380,29 +397,24 @@ class LabgridClient:
                         and not ip_address
                         and res_data.get("avail", True)
                     ):
-                        ip_address = self._resolve_hostname_to_ip(exporter_hostname)
+                        ip_address = await self._resolve_hostname_to_ip(exporter_hostname)
 
-                place_data = self._places_cache.get(exporter_name, {})
-                place_acquired = place_data.get("acquired")
-                if place_acquired:
-                    acquired_by = place_acquired
-
-                # Determine status based on availability and acquisition
                 if not is_available:
                     status = "offline"
-                elif place_acquired_flag or has_acquired_resource:
+                elif place_acquired or has_acquired_resource:
                     status = "acquired"
                 else:
                     status = "available"
 
-                if not acquired_by and (place_acquired_flag or has_acquired_resource):
+                if not acquired_by and (place_acquired or has_acquired_resource):
                     acquired_by = "N/A"
 
                 target = Target(
-                    name=exporter_name,
+                    name=place_name,
                     status=status,
                     acquired_by=acquired_by,
                     ip_address=ip_address,
+                    web_url=tags.get("web_url"),
                     resources=resources_list,
                 )
                 targets.append(target)
@@ -461,40 +473,68 @@ class LabgridClient:
         try:
             # Refresh cache first
             await self._refresh_cache()
+            place_data = self._places_cache.get(name)
+            if not place_data and name not in self._resources_cache:
+                return None
 
-            # Look for the exporter matching the name
-            if name in self._resources_cache:
-                exporter_resources = self._resources_cache[name]
-                resources = []
-                avail = True
-                for res_type, res_data in exporter_resources.items():
-                    resources.append(
-                        Resource(
-                            name=res_type,
-                            type=res_data.get("cls", res_type),
-                            info=res_data.get("params", {}),
-                        )
+            if not place_data:
+                place_data = {
+                    "name": name,
+                    "acquired": None,
+                    "comment": "",
+                    "tags": {},
+                    "matches": [],
+                }
+
+            resource_entries = self._get_place_resource_entries(name)
+            if not resource_entries:
+                return None
+
+            resources = []
+            is_available = True
+            ip_address = place_data.get("tags", {}).get("ip")
+            for exporter_name, res_type, res_data in resource_entries:
+                params = res_data.get("params", {})
+                resources.append(
+                    Resource(
+                        type=res_data.get("cls", res_type),
+                        params=params,
                     )
-                    if not res_data.get("avail", False):
-                        avail = False
-
-                place_data = self._places_cache.get(name, {})
-                place_acquired = place_data.get("acquired")
-                if not avail:
-                    status = "offline"
-                elif place_acquired:
-                    status = "acquired"
-                else:
-                    status = "available"
-
-                return Target(
-                    name=name,
-                    status=status,
-                    acquired_by=place_acquired,
-                    resources=resources,
-                    tags={},
                 )
-            return None
+                if not res_data.get("avail", True):
+                    is_available = False
+                if not ip_address and res_data.get("avail", True):
+                    extra = params.get("extra", {})
+                    exporter_hostname = extra.get("proxy") or exporter_name
+                    if exporter_hostname:
+                        ip_address = await self._resolve_hostname_to_ip(exporter_hostname)
+
+            place_acquired = place_data.get("acquired")
+            if isinstance(place_acquired, str):
+                place_acquired = place_acquired.strip() or None
+
+            acquired_by = place_acquired
+            if not acquired_by:
+                for _, _, res_data in resource_entries:
+                    if res_data.get("acquired"):
+                        acquired_by = res_data["acquired"]
+                        break
+
+            if not is_available:
+                status = "offline"
+            elif acquired_by:
+                status = "acquired"
+            else:
+                status = "available"
+
+            return Target(
+                name=name,
+                status=status,
+                acquired_by=acquired_by,
+                ip_address=ip_address,
+                web_url=place_data.get("tags", {}).get("web_url"),
+                resources=resources,
+            )
         except Exception as e:
             logger.error(f"Failed to get place info for {name}: {e}")
             return None
@@ -568,11 +608,74 @@ class LabgridClient:
             The username who acquired the target, or None if not acquired.
         """
         await self._refresh_cache()
-        if place_name in self._resources_cache:
-            for res_type, res_data in self._resources_cache[place_name].items():
-                acquired = res_data.get("acquired")
-                if acquired:
-                    return acquired
+        place_data = self._places_cache.get(place_name, {})
+        place_acquired = place_data.get("acquired")
+        if place_acquired:
+            return place_acquired
+
+        for _, _, res_data in self._get_place_resource_entries(place_name):
+            acquired = res_data.get("acquired")
+            if acquired:
+                return acquired
+        return None
+
+    def _get_place_resource_entries(
+        self, place_name: str
+    ) -> List[Tuple[str, str, Dict[str, Any]]]:
+        """Get all resource entries that belong to a coordinator place."""
+        place_data = self._places_cache.get(place_name, {})
+        exporters = self._get_place_exporters(place_name, place_data)
+
+        entries: List[Tuple[str, str, Dict[str, Any]]] = []
+        for exporter_name in exporters:
+            exporter_resources = self._resources_cache.get(exporter_name, {})
+            for res_type, res_data in exporter_resources.items():
+                entries.append((exporter_name, res_type, res_data))
+
+        return entries
+
+    def _get_place_exporters(
+        self, place_name: str, place_data: Dict[str, Any]
+    ) -> List[str]:
+        """Resolve exporter names for a place from matches, with exact-name fallback."""
+        exporters: List[str] = []
+        for match in place_data.get("matches", []):
+            exporter_name = self._extract_match_exporter(match)
+            if (
+                exporter_name
+                and exporter_name in self._resources_cache
+                and exporter_name not in exporters
+            ):
+                exporters.append(exporter_name)
+
+        if place_name in self._resources_cache and place_name not in exporters:
+            exporters.append(place_name)
+
+        return exporters
+
+    def _extract_match_exporter(self, match: Any) -> Optional[str]:
+        """Best-effort exporter extraction from a labgrid place match entry."""
+        if isinstance(match, str):
+            return match
+
+        if isinstance(match, dict):
+            for key in ("exporter", "name"):
+                value = match.get(key)
+                if isinstance(value, str):
+                    return value
+            return None
+
+        if isinstance(match, (list, tuple)):
+            for value in match:
+                if isinstance(value, str) and value in self._resources_cache:
+                    return value
+            return None
+
+        for attr in ("exporter", "name"):
+            value = getattr(match, attr, None)
+            if isinstance(value, str):
+                return value
+
         return None
 
     async def acquire_target(self, place_name: str) -> bool:
@@ -582,21 +685,13 @@ class LabgridClient:
             place_name: The place name to acquire.
 
         Returns:
-            True if successfully acquired.
+            True if this call acquired the target, False if it was already held
+            by the dashboard user.
 
         Raises:
             TargetAcquiredByOtherError: If target is acquired by another user.
             RuntimeError: If acquisition fails for other reasons.
         """
-        # Check current state first
-        current_owner = await self._get_acquired_by(place_name)
-        if current_owner and current_owner != LABGRID_DASHBOARD_USER:
-            raise TargetAcquiredByOtherError(place_name, current_owner)
-
-        if current_owner == LABGRID_DASHBOARD_USER:
-            logger.debug(f"Target '{place_name}' already acquired by us")
-            return True  # Already acquired by us
-
         logger.info(f"Acquiring target '{place_name}' as '{LABGRID_DASHBOARD_USER}'")
         proc = await asyncio.create_subprocess_exec(
             "labgrid-client",
@@ -614,9 +709,10 @@ class LabgridClient:
         if proc.returncode != 0:
             error = stderr.decode("utf-8", errors="replace")
             if "already acquired" in error.lower():
-                # Parse who acquired it from error message
-                # Error format: "place X is already acquired by Y"
                 acquired_by = self._parse_acquired_by_from_error(error)
+                if acquired_by == LABGRID_DASHBOARD_USER:
+                    logger.debug(f"Target '{place_name}' already acquired by us")
+                    return False
                 raise TargetAcquiredByOtherError(place_name, acquired_by)
             raise RuntimeError(f"Failed to acquire target: {error}")
 
@@ -741,22 +837,22 @@ class LabgridClient:
             logger.warning("Not connected to coordinator")
             return ("Error: Not connected to coordinator", 1)
 
-        try:
-            # Step 1: Acquire the target
-            await self.acquire_target(place_name)
+        target_lock = self._command_locks.setdefault(place_name, asyncio.Lock())
 
-            try:
-                # Step 2: Execute the command
-                output = await self._execute_via_labgrid_client(place_name, command)
-                return (output, 0)
-            finally:
-                # Step 3: Always release with retry
-                released = await self.release_target_with_retry(place_name)
-                if not released:
-                    # Log but don't fail the command - it already executed
-                    logger.error(
-                        f"Command succeeded but release failed for '{place_name}'"
-                    )
+        try:
+            async with target_lock:
+                acquired_here = await self.acquire_target(place_name)
+
+                try:
+                    output = await self._execute_via_labgrid_client(place_name, command)
+                    return (output, 0)
+                finally:
+                    if acquired_here:
+                        released = await self.release_target_with_retry(place_name)
+                        if not released:
+                            logger.error(
+                                f"Command succeeded but release failed for '{place_name}'"
+                            )
 
         except TargetAcquiredByOtherError:
             # Re-raise for API layer to handle
@@ -856,61 +952,3 @@ class LabgridClient:
             raise RuntimeError(f"labgrid-client error: {error}")
 
         return stdout.decode("utf-8", errors="replace").strip()
-
-    def _parse_places(self, places_data: Dict[str, Any]) -> List[Target]:
-        """Parse places data from the coordinator into Target objects.
-
-        Args:
-            places_data: Raw places data from the coordinator.
-
-        Returns:
-            List of parsed Target objects.
-        """
-        targets = []
-        for name, data in places_data.items():
-            target = self._parse_place(name, data)
-            if target:
-                targets.append(target)
-        return targets
-
-    def _parse_place(self, name: str, data: Dict[str, Any]) -> Optional[Target]:
-        """Parse a single place into a Target object.
-
-        Args:
-            name: The place name.
-            data: Raw place data from the coordinator.
-
-        Returns:
-            Parsed Target object, or None if parsing fails.
-        """
-        try:
-            # Determine status based on acquired state
-            acquired = data.get("acquired")
-            if acquired:
-                status = "acquired"
-            else:
-                # Check if place has any resources (indicates it's online)
-                status = "available"
-
-            # Parse resources
-            resources = []
-            for res_type in data.get("acquired_resources", []):
-                resources.append(Resource(type=res_type, params={}))
-
-            # Extract additional info from tags
-            tags = data.get("tags", {})
-            ip_address = tags.get("ip", None)
-            web_url = tags.get("web_url", None)
-
-            return Target(
-                name=name,
-                status=status,
-                acquired_by=acquired,
-                ip_address=ip_address,
-                web_url=web_url,
-                resources=resources,
-                last_command_outputs=[],
-            )
-        except Exception as e:
-            logger.error(f"Failed to parse place {name}: {e}")
-            return None
