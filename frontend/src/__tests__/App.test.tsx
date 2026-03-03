@@ -109,11 +109,12 @@ describe('App', () => {
     });
   });
 
-  it('shows connection status when connected', async () => {
+  it('shows footer connection indicators when connected', async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Connected')).toBeInTheDocument();
+      expect(screen.getByText('Backend')).toBeInTheDocument();
+      expect(screen.getByText('Coordinator')).toBeInTheDocument();
     });
   });
 
