@@ -16,13 +16,12 @@ import type {
 } from "./types";
 import "./App.css";
 
-const APP_VERSION =
-  typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.1.0";
-
 /**
  * Main application component
  */
 function App() {
+  const appVersion =
+    window.ENV?.APP_VERSION ?? import.meta.env.VITE_APP_VERSION ?? "dev";
   const {
     presetGroups,
     loading,
@@ -259,7 +258,7 @@ function App() {
             {totalTargets} target{totalTargets !== 1 ? "s" : ""} found
           </span>
           <span className="app-version" aria-label="Application version">
-            v{APP_VERSION}
+            {appVersion}
           </span>
           <ConnectionIndicators
             websocketConnected={connected}

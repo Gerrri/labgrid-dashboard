@@ -2,7 +2,7 @@
  * Tests for the main App component.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 
@@ -81,6 +81,11 @@ vi.mock('../hooks/useWebSocket', () => ({
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.ENV = undefined;
+  });
+
+  afterEach(() => {
+    window.ENV = undefined;
   });
 
   it('renders the app header', async () => {
@@ -132,7 +137,17 @@ describe('App', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('v0.1.0')).toBeInTheDocument();
+      expect(screen.getByText('dev')).toBeInTheDocument();
+    });
+  });
+
+  it('uses the runtime application version when provided', async () => {
+    window.ENV = { APP_VERSION: 'v9.9.9-test' };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('v9.9.9-test')).toBeInTheDocument();
     });
   });
 });

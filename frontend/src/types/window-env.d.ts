@@ -5,7 +5,7 @@ declare global {
     ENV?: {
       API_URL?: string;
       WS_URL?: string;
+      APP_VERSION?: string;
     };
   }
 }
-
