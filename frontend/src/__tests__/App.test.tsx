@@ -2,7 +2,7 @@
  * Tests for the main App component.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 
@@ -81,6 +81,11 @@ vi.mock('../hooks/useWebSocket', () => ({
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.ENV = undefined;
+  });
+
+  afterEach(() => {
+    window.ENV = undefined;
   });
 
   it('renders the app header', async () => {
@@ -109,11 +114,12 @@ describe('App', () => {
     });
   });
 
-  it('shows connection status when connected', async () => {
+  it('shows footer connection indicators when connected', async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Connected')).toBeInTheDocument();
+      expect(screen.getByText('Backend')).toBeInTheDocument();
+      expect(screen.getByText('Coordinator')).toBeInTheDocument();
     });
   });
 
@@ -124,6 +130,24 @@ describe('App', () => {
       const footerCount = document.querySelector('.target-count');
       expect(footerCount).not.toBeNull();
       expect(footerCount).toHaveTextContent('1 target found');
+    });
+  });
+
+  it('shows the application version in the footer', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('dev')).toBeInTheDocument();
+    });
+  });
+
+  it('uses the runtime application version when provided', async () => {
+    window.ENV = { APP_VERSION: 'v9.9.9-test' };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('v9.9.9-test')).toBeInTheDocument();
     });
   });
 });
