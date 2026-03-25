@@ -20,9 +20,10 @@ Labgrid Dashboard provides a real-time web interface to:
 - **Monitor status** - See which devices are available, acquired, or offline
 - **Track ownership** - Know who currently has acquired each exporter/target
 - **Quick access** - Click on IP addresses to directly access device web interfaces
-- **Execute commands** - Run predefined commands on DUTs and view their outputs
+- **Execute commands** - Run predefined commands on DUTs with serial-first transport and SSH fallback
 - **Hardware Presets** - Assign hardware-specific command sets to different targets
 - **Grouped Display** - Targets are automatically grouped by their preset type
+- **Transport-aware UI** - Hide command controls on unsupported targets and show a per-device reason
 - **Real-time updates** - WebSocket-based live status updates without manual refresh
 
 > 📖 For a quick introduction, see the [Quick Start Guide](quick-start.md).
@@ -163,7 +164,7 @@ docker compose up -d
 - Backend API: http://localhost:8000
 
 ### Staging Mode
-Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands are executed via `labgrid-client` CLI, which properly routes through: Backend → Coordinator → Exporter → DUT.
+Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands prefer a serial shell and fall back to SSH if serial execution is not available for the target/preset.
 
 If the backend starts before the coordinator becomes reachable, it remains available in degraded mode and retries the coordinator connection automatically in the background.
 
@@ -215,17 +216,53 @@ This demonstrates the "acquired" status in the dashboard with:
 
 **How Command Execution Works:**
 1. Frontend sends command request to Backend via HTTP
-2. Backend uses `labgrid-client` CLI to execute commands
-3. `labgrid-client` communicates with Coordinator via gRPC
-4. Coordinator routes to appropriate Exporter
-5. Exporter uses the appropriate driver (ShellDriver, SSHDriver, etc.) to execute on DUT
+2. Backend resolves the target's preset and `command_execution` transport order
+3. Backend prefers serial execution through Labgrid's `SerialDriver` + `ShellDriver`
+4. If serial is unavailable or transport setup fails, Backend falls back to `labgrid-client ssh` when SSH is allowed by the preset
+5. Scheduled commands, REST requests, and WebSocket-triggered commands all use the same backend execution service
 6. Output flows back through the same path
 
-**Supported Connection Types:**
-Labgrid automatically selects the appropriate driver based on available resources:
-- **NetworkSerialPort** - Serial over TCP (used in staging)
-- **USBSerialPort** - Direct USB serial connection
-- **SSHDriver** - SSH connection for network-accessible DUTs
+**Supported Execution Transports:**
+- **Serial shell** - Uses a `NetworkSerialPort` and Labgrid's `ShellDriver`, including login automation and prompt detection
+- **SSH fallback** - Uses `labgrid-client ssh` when a `NetworkService` is available and the preset allows SSH
+- **Unsupported** - If neither transport is available, the backend marks the target as not command-capable and the UI hides command controls for that device
+
+### Command Execution Configuration
+
+Command execution is configured per preset in `backend/commands.yaml`. Each preset can define:
+
+- ordered transport preference
+- serial login automation
+- shell prompt detection
+- serial command timeout overrides
+
+Example:
+
+```yaml
+default_preset: basic
+
+presets:
+  basic:
+    name: "Basic"
+    description: "Standard Linux Commands"
+    command_execution:
+      transport_order:
+        - serial
+        - ssh
+      serial:
+        prompt: ".*[#\\$] "
+        login_prompt: "(?i)login: ?"
+        username: "root"
+        password_env: "LABGRID_SERIAL_PASSWORD"
+        command_timeout_seconds: 60
+```
+
+Notes:
+
+- `transport_order` is evaluated from left to right per target
+- `serial.username` / `serial.password` can be set inline, or via `serial.username_env` / `serial.password_env`
+- the same transport order is used for manual commands and scheduled commands
+- the UI uses backend-provided command capability metadata, so unsupported targets do not show command buttons
 
 ## Docker Commands
 
@@ -476,6 +513,13 @@ docker compose --profile staging logs dut-1
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
+
+Please review the [AGENTS.md](AGENTS.md) and [agent-rules/](agent-rules/) for coding guidelines when contributing.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+ free to submit issues and pull requests.
 
 Please review the [AGENTS.md](AGENTS.md) and [agent-rules/](agent-rules/) for coding guidelines when contributing.
 
