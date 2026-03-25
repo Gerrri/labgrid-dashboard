@@ -270,7 +270,14 @@ export function TargetRow({
     );
   };
 
-  const canExecuteCommands = target.status !== "offline";
+  const canExecuteCommands =
+    target.command_capable ?? target.status !== "offline";
+  const commandCapabilityError =
+    target.command_capability_error ??
+    (target.status === "offline"
+      ? "Commands unavailable - target is offline"
+      : "Commands unavailable for this target");
+  const commandTransport = target.command_transport ?? null;
 
   return (
     <>
@@ -316,20 +323,28 @@ export function TargetRow({
                 /* Command Panel Section */
                 <div className="details-section">
                   {canExecuteCommands ? (
-                    <CommandPanel
-                      targetName={target.name}
-                      initialOutputs={target.last_command_outputs}
-                      persistedOutputs={commandOutputs}
-                      onCommandStart={handleCommandStart}
-                      onCommandComplete={handleCommandComplete}
-                      onOutputsChange={handleOutputsChange}
-                      onSettingsClick={handleSettingsClick}
-                    />
+                    <>
+                      {commandTransport && (
+                        <div className="command-transport-indicator text-muted">
+                          Command transport: {commandTransport}
+                        </div>
+                      )}
+                      <CommandPanel
+                        targetName={target.name}
+                        initialOutputs={target.last_command_outputs}
+                        persistedOutputs={commandOutputs}
+                        onCommandStart={handleCommandStart}
+                        onCommandComplete={handleCommandComplete}
+                        onOutputsChange={handleOutputsChange}
+                        onSettingsClick={handleSettingsClick}
+                      />
+                    </>
                   ) : (
-                    <div className="commands-offline">
-                      <p className="text-muted">
-                        Commands unavailable - target is offline
+                    <div className="commands-unavailable" role="alert">
+                      <p className="commands-unavailable-title">
+                        Commands unavailable
                       </p>
+                      <p className="text-muted">{commandCapabilityError}</p>
                     </div>
                   )}
                 </div>

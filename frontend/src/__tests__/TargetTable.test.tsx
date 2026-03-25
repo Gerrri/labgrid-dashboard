@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TargetTable } from "../components/TargetTable";
 import type { Target } from "../types";
 
@@ -45,6 +45,9 @@ const mockTargets: Target[] = [
     ],
     last_command_outputs: [],
     scheduled_outputs: {},
+    command_capable: true,
+    command_transport: "serial",
+    command_capability_error: null,
   },
   {
     name: "test-dut-2",
@@ -55,6 +58,9 @@ const mockTargets: Target[] = [
     resources: [],
     last_command_outputs: [],
     scheduled_outputs: {},
+    command_capable: true,
+    command_transport: "ssh",
+    command_capability_error: null,
   },
   {
     name: "test-dut-3",
@@ -65,6 +71,9 @@ const mockTargets: Target[] = [
     resources: [],
     last_command_outputs: [],
     scheduled_outputs: {},
+    command_capable: false,
+    command_transport: null,
+    command_capability_error: "No command transport configured for this device",
   },
 ];
 
@@ -149,6 +158,47 @@ describe("TargetTable", () => {
     // test-dut-3 has no IP address, should show '-' or empty
     const rows = screen.getAllByRole("row");
     expect(rows.length).toBeGreaterThan(1); // Header + data rows
+  });
+
+  it("renders the command panel for capable targets", async () => {
+    render(
+      <TargetTable
+        targets={[mockTargets[0]]}
+        loading={false}
+        onCommandComplete={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /expand details/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Commands for test-dut-1")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Command transport: serial")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Test Command" })).toBeInTheDocument();
+  });
+
+  it("hides the command panel and shows an error for incapable targets", async () => {
+    const api = await import("../services/api");
+    const getCommandsSpy = vi.mocked(api.api.getCommands);
+    getCommandsSpy.mockClear();
+
+    render(
+      <TargetTable
+        targets={[mockTargets[2]]}
+        loading={false}
+        onCommandComplete={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /expand details/i }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Commands unavailable");
+    expect(
+      screen.getByText("No command transport configured for this device"),
+    ).toBeInTheDocument();
+    expect(getCommandsSpy).not.toHaveBeenCalled();
   });
 
   it("shows loading state", () => {
