@@ -22,6 +22,13 @@ presets:
   basic:
     name: "Basic"
     description: "Standard Linux commands"
+    command_execution:
+      transport_order: [serial, ssh]
+      serial:
+        resource_name: "console"
+        prompt: ".*# "
+        login_prompt: "login:"
+        username: "root"
     commands:
       - name: "Linux Version"
         command: "cat /etc/os-release"
@@ -127,6 +134,27 @@ scheduled_commands:
                 assert preset.description == "Standard Linux commands"
                 assert len(preset.commands) == 2
                 assert len(preset.scheduled_commands) == 1
+                assert preset.command_execution.transport_order == ["serial", "ssh"]
+                assert preset.command_execution.serial.resource_name == "console"
+            finally:
+                os.unlink(f.name)
+
+    def test_missing_command_execution_defaults_to_ssh(
+        self,
+        legacy_yaml_content: str,
+    ):
+        """Test that legacy/basic presets default to SSH-only execution."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(legacy_yaml_content)
+            f.flush()
+
+            try:
+                service = CommandService(commands_file=f.name)
+                service.load()
+
+                execution = service.get_execution_config_for_preset("basic")
+                assert execution.transport_order == ["ssh"]
+                assert execution.serial.resource_name is None
             finally:
                 os.unlink(f.name)
 

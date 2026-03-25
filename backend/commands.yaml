@@ -11,6 +11,14 @@ presets:
   basic:
     name: "Basic"
     description: "Standard Linux Commands"
+    command_execution:
+      transport_order:
+        - serial
+        - ssh
+      serial:
+        prompt: ".*[#\\$] "
+        login_prompt: "(?i)login: ?"
+        username: "root"
     commands:
       - name: "Linux Version"
         command: "cat /etc/os-release"

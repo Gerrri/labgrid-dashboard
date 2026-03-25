@@ -97,6 +97,7 @@ class LabgridClient:
 
                 # Get the current event loop
                 loop = asyncio.get_event_loop()
+                os.environ["LG_USERNAME"] = LABGRID_DASHBOARD_USER
 
                 # Create ClientSession with address and loop
                 # Using keyword arguments for attrs-generated constructor
@@ -232,7 +233,15 @@ class LabgridClient:
                         if exporter_name not in current_resources:
                             current_resources[exporter_name] = {}
 
-                        current_resources[exporter_name][res_type] = {
+                        resource_key = (
+                            res_type
+                            if group_name == "default"
+                            else f"{group_name}/{res_type}"
+                        )
+
+                        current_resources[exporter_name][resource_key] = {
+                            "name": group_name,
+                            "resource_type": res_type,
                             "cls": cls_name,
                             "params": params,
                             "acquired": acquired,
@@ -633,6 +642,12 @@ class LabgridClient:
                 entries.append((exporter_name, res_type, res_data))
 
         return entries
+
+    def get_place_resource_entries(
+        self, place_name: str
+    ) -> List[Tuple[str, str, Dict[str, Any]]]:
+        """Public wrapper for cached place resource entries."""
+        return self._get_place_resource_entries(place_name)
 
     def _get_place_exporters(
         self, place_name: str, place_data: Dict[str, Any]

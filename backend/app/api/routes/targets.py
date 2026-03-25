@@ -26,6 +26,7 @@ from app.models.target import (
     Target,
 )
 from app.services.command_service import CommandService
+from app.services.command_execution_service import CommandExecutionService
 from app.services.labgrid_client import (
     LabgridClient,
     TargetAcquiredByOtherError,
@@ -43,6 +44,7 @@ _labgrid_client: LabgridClient | None = None
 _command_service: CommandService | None = None
 _scheduler_service: SchedulerService | None = None
 _preset_service: PresetService | None = None
+_command_execution_service: CommandExecutionService | None = None
 
 
 def set_labgrid_client(client: LabgridClient) -> None:
@@ -67,6 +69,14 @@ def set_preset_service(service: PresetService) -> None:
     """Set the global preset service instance."""
     global _preset_service
     _preset_service = service
+
+
+def set_command_execution_service(
+    service: CommandExecutionService | None,
+) -> None:
+    """Set the global command execution service instance."""
+    global _command_execution_service
+    _command_execution_service = service
 
 
 def get_labgrid_client() -> LabgridClient:
@@ -109,6 +119,37 @@ def get_preset_service() -> PresetService:
     return _preset_service
 
 
+def _enrich_target(
+    target: Target,
+    *,
+    scheduler: SchedulerService | None = None,
+) -> Target:
+    """Add command capability and scheduled output data to a target."""
+    if _command_execution_service is not None:
+        target = _command_execution_service.enrich_target(target)
+
+    if scheduler is not None:
+        target.scheduled_outputs = scheduler.get_outputs_for_target(target.name)
+
+    return target
+
+
+def _enrich_targets(
+    targets: List[Target],
+    *,
+    scheduler: SchedulerService | None = None,
+) -> List[Target]:
+    """Add command capability and scheduled output data to a target list."""
+    if _command_execution_service is not None:
+        targets = _command_execution_service.enrich_targets(targets)
+
+    if scheduler is not None:
+        for target in targets:
+            target.scheduled_outputs = scheduler.get_outputs_for_target(target.name)
+
+    return targets
+
+
 @router.get(
     "",
     response_model=TargetListResponse,
@@ -121,10 +162,7 @@ async def get_targets(
 ) -> TargetListResponse:
     """Get all targets from the Labgrid coordinator with scheduled command outputs."""
     targets = await client.get_places()
-
-    # Enrich targets with scheduled command outputs
-    for target in targets:
-        target.scheduled_outputs = scheduler.get_outputs_for_target(target.name)
+    targets = _enrich_targets(targets, scheduler=scheduler)
 
     return TargetListResponse(targets=targets, total=len(targets))
 
@@ -163,7 +201,7 @@ async def get_target(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Target '{name}' not found",
         )
-    return target
+    return _enrich_target(target, scheduler=_scheduler_service)
 
 
 @router.get(
@@ -239,18 +277,30 @@ async def execute_command(
             detail=f"Command '{request.command_name}' not found in configuration",
         )
 
-    # Execute the command via Labgrid Coordinator
+    # Execute the command via the preset-aware execution service if available.
     logger.info(f"Executing command '{command.name}' on target '{name}'")
+    target = _enrich_target(target, scheduler=_scheduler_service)
     rollback_target = target.model_dump(mode="json")
+    can_optimistically_acquire = (
+        target.command_capable
+        if target.command_capable is not None
+        else target.status != "offline"
+    )
 
     try:
-        optimistic_target = dict(rollback_target)
-        optimistic_target["status"] = "acquired"
-        optimistic_target["acquired_by"] = LABGRID_DASHBOARD_USER
-        await broadcast_target_update(optimistic_target)
+        if can_optimistically_acquire:
+            optimistic_target = dict(rollback_target)
+            optimistic_target["status"] = "acquired"
+            optimistic_target["acquired_by"] = LABGRID_DASHBOARD_USER
+            await broadcast_target_update(optimistic_target)
 
-        # Execute command through the labgrid client
-        result_output, exit_code = await client.execute_command(name, command.command)
+        if _command_execution_service is not None:
+            result_output, exit_code = await _command_execution_service.execute_command(
+                name,
+                command.command,
+            )
+        else:
+            result_output, exit_code = await client.execute_command(name, command.command)
 
         output = CommandOutput(
             command=command.command,
@@ -281,7 +331,10 @@ async def execute_command(
         try:
             updated_target = await client.get_place_info(name)
             if updated_target:
-                target_update = updated_target.model_dump(mode="json")
+                target_update = _enrich_target(
+                    updated_target,
+                    scheduler=_scheduler_service,
+                ).model_dump(mode="json")
         except Exception as e:
             logger.warning(f"Failed to refresh target state for '{name}': {e}")
 
@@ -375,6 +428,15 @@ async def set_target_preset(
     # Set the preset assignment
     preset_service.set_target_preset(name, request.preset_id)
     logger.info(f"Set preset for target '{name}' to '{request.preset_id}'")
+
+    updated_target = await client.get_place_info(name)
+    if updated_target is not None:
+        await broadcast_target_update(
+            _enrich_target(
+                updated_target,
+                scheduler=_scheduler_service,
+            ).model_dump(mode="json")
+        )
 
     # Convert to summary Preset
     preset = Preset(

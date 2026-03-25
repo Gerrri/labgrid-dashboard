@@ -12,11 +12,14 @@ from typing import Dict, List, Optional
 import yaml
 from app.models.target import (
     Command,
+    CommandExecutionConfig,
     CommandsConfig,
     Preset,
     PresetDetail,
     PresetsConfig,
     ScheduledCommand,
+    SerialCommandExecutionConfig,
+    SSHCommandExecutionConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,6 +110,9 @@ class CommandService:
             ]
 
             auto_refresh = preset_data.get("auto_refresh_commands", [])
+            command_execution = self._parse_command_execution_config(
+                preset_data.get("command_execution")
+            )
 
             presets[preset_id] = PresetDetail(
                 id=preset_id,
@@ -115,6 +121,7 @@ class CommandService:
                 commands=commands,
                 scheduled_commands=scheduled_commands,
                 auto_refresh_commands=auto_refresh,
+                command_execution=command_execution,
             )
 
         self._presets_config = PresetsConfig(
@@ -181,6 +188,7 @@ class CommandService:
             commands=commands,
             scheduled_commands=scheduled_commands,
             auto_refresh_commands=auto_refresh,
+            command_execution=CommandExecutionConfig(),
         )
 
         self._presets_config = PresetsConfig(
@@ -273,6 +281,15 @@ class CommandService:
         if preset:
             return preset.auto_refresh_commands
         return []
+
+    def get_execution_config_for_preset(
+        self, preset_id: str
+    ) -> CommandExecutionConfig:
+        """Get the command execution config for a specific preset."""
+        preset = self.get_preset(preset_id)
+        if preset:
+            return preset.command_execution
+        return CommandExecutionConfig()
 
     def get_default_preset_id(self) -> str:
         """Get the default preset ID.
@@ -386,3 +403,31 @@ class CommandService:
         self._presets_config = None
         self._legacy_config = None
         self.load()
+
+    def _parse_command_execution_config(
+        self, execution_data: Optional[dict]
+    ) -> CommandExecutionConfig:
+        """Parse preset-level command execution config with safe defaults."""
+        execution_data = execution_data or {}
+        transport_order = execution_data.get("transport_order")
+
+        if isinstance(transport_order, list) and transport_order:
+            normalized_order = [
+                str(transport).strip().lower()
+                for transport in transport_order
+                if str(transport).strip()
+            ]
+        elif execution_data.get("serial"):
+            normalized_order = ["serial", "ssh"]
+        else:
+            normalized_order = ["ssh"]
+
+        return CommandExecutionConfig(
+            transport_order=normalized_order,
+            serial=SerialCommandExecutionConfig.model_validate(
+                execution_data.get("serial") or {}
+            ),
+            ssh=SSHCommandExecutionConfig.model_validate(
+                execution_data.get("ssh") or {}
+            ),
+        )

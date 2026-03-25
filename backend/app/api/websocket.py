@@ -5,11 +5,12 @@ WebSocket endpoint for real-time communication.
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from app.api.connection_manager import manager
 from app.models.target import CommandOutput, ScheduledCommandOutput
 from app.services.command_service import CommandService
+from app.services.command_execution_service import CommandExecutionService
 from app.config import LABGRID_DASHBOARD_USER
 from app.services.labgrid_client import (
     LabgridClient,
@@ -26,6 +27,8 @@ router = APIRouter()
 _labgrid_client: LabgridClient | None = None
 _command_service: CommandService | None = None
 _scheduler_service: SchedulerService | None = None
+_preset_service: Any | None = None
+_command_execution_service: CommandExecutionService | None = None
 
 
 def set_labgrid_client(client: LabgridClient) -> None:
@@ -48,6 +51,45 @@ def set_scheduler_service(service: SchedulerService) -> None:
     service.set_notify_callback(broadcast_scheduled_output)
 
 
+def set_preset_service(service: Any | None) -> None:
+    """Set the global preset service instance."""
+    global _preset_service
+    _preset_service = service
+
+
+def set_command_execution_service(
+    service: CommandExecutionService | None,
+) -> None:
+    """Set the global command execution service instance."""
+    global _command_execution_service
+    _command_execution_service = service
+
+
+def _enrich_target(target):
+    """Add command capability and scheduled output data to a target."""
+    if _command_execution_service is not None:
+        target = _command_execution_service.enrich_target(target)
+
+    if _scheduler_service is not None:
+        target.scheduled_outputs = _scheduler_service.get_outputs_for_target(target.name)
+
+    return target
+
+
+def _serialize_targets(targets: List[Any]) -> List[Dict[str, Any]]:
+    """Serialize and enrich a list of targets for WebSocket transport."""
+    if _command_execution_service is not None:
+        targets = _command_execution_service.enrich_targets(targets)
+
+    if _scheduler_service is not None:
+        for target in targets:
+            target.scheduled_outputs = _scheduler_service.get_outputs_for_target(
+                target.name
+            )
+
+    return [target.model_dump(mode="json") for target in targets]
+
+
 async def handle_subscribe(websocket: WebSocket, data: Dict[str, Any]) -> None:
     """Handle subscribe message from client.
 
@@ -61,17 +103,11 @@ async def handle_subscribe(websocket: WebSocket, data: Dict[str, Any]) -> None:
     # Send initial targets list with scheduled outputs
     if _labgrid_client:
         targets_list = await _labgrid_client.get_places()
-        # Enrich with scheduled outputs
-        if _scheduler_service:
-            for target in targets_list:
-                target.scheduled_outputs = _scheduler_service.get_outputs_for_target(
-                    target.name
-                )
         await manager.send_to(
             websocket,
             {
                 "type": "targets_list",
-                "data": [t.model_dump(mode='json') for t in targets_list],
+                "data": _serialize_targets(targets_list),
             },
         )
     logger.info(f"Client subscribed to: {targets}")
@@ -118,9 +154,16 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             },
         )
         return
+    target = _enrich_target(target)
+
+    preset_id = _preset_service.get_target_preset(target_name) if _preset_service else None
 
     # Get the command from configuration
-    command = _command_service.get_command_by_name(command_name)
+    command = None
+    if preset_id and _command_service:
+        command = _command_service.get_command_by_name_for_preset(preset_id, command_name)
+    if command is None and _command_service:
+        command = _command_service.get_command_by_name(command_name)
     if command is None:
         await manager.send_to(
             websocket,
@@ -138,17 +181,28 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
         f"Executing command '{command.name}' on target '{target_name}' via WebSocket"
     )
     rollback_target = target.model_dump(mode="json")
+    can_optimistically_acquire = (
+        target.command_capable
+        if target.command_capable is not None
+        else target.status != "offline"
+    )
 
     try:
-        optimistic_target = dict(rollback_target)
-        optimistic_target["status"] = "acquired"
-        optimistic_target["acquired_by"] = LABGRID_DASHBOARD_USER
-        await broadcast_target_update(optimistic_target)
+        if can_optimistically_acquire:
+            optimistic_target = dict(rollback_target)
+            optimistic_target["status"] = "acquired"
+            optimistic_target["acquired_by"] = LABGRID_DASHBOARD_USER
+            await broadcast_target_update(optimistic_target)
 
-        # Execute command through the labgrid client
-        result_output, exit_code = await _labgrid_client.execute_command(
-            target_name, command.command
-        )
+        if _command_execution_service is not None:
+            result_output, exit_code = await _command_execution_service.execute_command(
+                target_name,
+                command.command,
+            )
+        else:
+            result_output, exit_code = await _labgrid_client.execute_command(
+                target_name, command.command
+            )
 
         output = CommandOutput(
             command=command.command,
@@ -180,7 +234,9 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             try:
                 updated_target = await _labgrid_client.get_place_info(target_name)
                 if updated_target:
-                    target_update = updated_target.model_dump(mode="json")
+                    target_update = _enrich_target(updated_target).model_dump(
+                        mode="json"
+                    )
             except Exception as e:
                 logger.warning(
                     f"Failed to refresh target state for '{target_name}': {e}"
@@ -234,17 +290,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # Send initial targets list on connection with scheduled outputs
         if _labgrid_client:
             targets_list = await _labgrid_client.get_places()
-            # Enrich with scheduled outputs
-            if _scheduler_service:
-                for target in targets_list:
-                    target.scheduled_outputs = (
-                        _scheduler_service.get_outputs_for_target(target.name)
-                    )
             await manager.send_to(
                 websocket,
                 {
                     "type": "targets_list",
-                    "data": [t.model_dump(mode='json') for t in targets_list],
+                    "data": _serialize_targets(targets_list),
                 },
             )
 
@@ -294,13 +344,18 @@ async def broadcast_target_update(target_data: Dict[str, Any]) -> None:
         target_data: The target data to broadcast.
     """
     target_name = target_data.get("name", "")
-
-    # Enrich with scheduled outputs if available
-    if _scheduler_service and target_name:
+    if (
+        _labgrid_client
+        and target_name
+        and "command_capable" not in target_data
+    ):
+        updated_target = await _labgrid_client.get_place_info(target_name)
+        if updated_target is not None:
+            target_data = _enrich_target(updated_target).model_dump(mode="json")
+    elif _scheduler_service and target_name:
         scheduled_outputs = _scheduler_service.get_outputs_for_target(target_name)
-        # Serialize ScheduledCommandOutput objects to JSON-compatible dicts
         target_data["scheduled_outputs"] = {
-            cmd_name: output.model_dump(mode='json')
+            cmd_name: output.model_dump(mode="json")
             for cmd_name, output in scheduled_outputs.items()
         }
 
@@ -317,16 +372,10 @@ async def broadcast_targets_list() -> None:
     """Broadcast current targets list to all connected clients."""
     if _labgrid_client:
         targets_list = await _labgrid_client.get_places()
-        # Enrich with scheduled outputs
-        if _scheduler_service:
-            for target in targets_list:
-                target.scheduled_outputs = _scheduler_service.get_outputs_for_target(
-                    target.name
-                )
         await manager.broadcast(
             {
                 "type": "targets_list",
-                "data": [t.model_dump(mode='json') for t in targets_list],
+                "data": _serialize_targets(targets_list),
             },
         )
 
