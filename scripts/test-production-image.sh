@@ -98,13 +98,7 @@ fi
 
 echo ""
 
-# Step 6: Check supervisord processes
-echo -e "${YELLOW}Step 6: Checking supervisord processes...${NC}"
-docker exec "$CONTAINER_NAME" supervisorctl status
-
-echo ""
-
-# Step 7: Success message
+# Step 6: Success message
 echo -e "${GREEN}=== All tests passed! ===${NC}\n"
 echo "Container is running and accessible at:"
 echo "  - Frontend: http://localhost:${PORT}"
@@ -112,9 +106,6 @@ echo "  - API: http://localhost:${PORT}/api/health"
 echo ""
 echo "To view logs:"
 echo "  docker logs -f $CONTAINER_NAME"
-echo ""
-echo "To check process status:"
-echo "  docker exec $CONTAINER_NAME supervisorctl status"
 echo ""
 echo "To stop and remove:"
 echo "  docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME"

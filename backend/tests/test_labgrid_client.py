@@ -411,6 +411,34 @@ class TestLabgridClientWithMockedSession:
         assert places[0].status == "offline"
 
     @pytest.mark.asyncio
+    async def test_get_places_with_mixed_resource_availability(
+        self, connected_client: LabgridClient
+    ):
+        """Test that optional offline resources do not mark the whole target offline."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                },
+                "NetworkUSBMassStorage": {
+                    "cls": "NetworkUSBMassStorage",
+                    "params": {"host": "192.168.1.100", "path": None},
+                    "acquired": None,
+                    "avail": False,
+                },
+            }
+        }
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            places = await connected_client.get_places()
+
+        assert len(places) == 1
+        assert places[0].status == "available"
+
+    @pytest.mark.asyncio
     async def test_subscribe_updates_returns_true_when_connected(
         self, connected_client: LabgridClient
     ):
@@ -459,6 +487,42 @@ class TestLabgridClientWithMockedSession:
 
         assert len(schedulable_places) == 1
         assert schedulable_places[0].name == "exporter-1"
+
+    @pytest.mark.asyncio
+    async def test_get_place_info_with_mixed_resource_availability(
+        self, connected_client: LabgridClient
+    ):
+        """Test that a target stays available while at least one matched resource is online."""
+        connected_client._resources_cache = {
+            "exporter-1": {
+                "NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                },
+                "NetworkIMXUSBLoader": {
+                    "cls": "NetworkIMXUSBLoader",
+                    "params": {"host": "192.168.1.100", "path": None},
+                    "acquired": None,
+                    "avail": False,
+                },
+            }
+        }
+        connected_client._places_cache = {
+            "exporter-1": {
+                "name": "exporter-1",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+            }
+        }
+
+        with patch.object(connected_client, "_refresh_cache", new_callable=AsyncMock):
+            target = await connected_client.get_place_info("exporter-1")
+
+        assert target is not None
+        assert target.status == "available"
 
     @pytest.mark.asyncio
     async def test_get_schedulable_places_returns_empty_without_places(
