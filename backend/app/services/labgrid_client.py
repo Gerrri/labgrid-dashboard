@@ -362,7 +362,7 @@ class LabgridClient:
                 ip_address = tags.get("ip")
                 acquired_by = None
                 has_acquired_resource = False
-                is_available = True
+                has_available_resource = False
                 place_acquired = place_info.get("acquired")
                 if isinstance(place_acquired, str):
                     place_acquired = place_acquired.strip()
@@ -375,8 +375,8 @@ class LabgridClient:
                     if res_data.get("acquired"):
                         has_acquired_resource = True
 
-                    if not res_data.get("avail", True):
-                        is_available = False
+                    if res_data.get("avail", True):
+                        has_available_resource = True
 
                     resources_list.append(
                         Resource(
@@ -399,7 +399,7 @@ class LabgridClient:
                     ):
                         ip_address = await self._resolve_hostname_to_ip(exporter_hostname)
 
-                if not is_available:
+                if not has_available_resource:
                     status = "offline"
                 elif place_acquired or has_acquired_resource:
                     status = "acquired"
@@ -491,7 +491,7 @@ class LabgridClient:
                 return None
 
             resources = []
-            is_available = True
+            has_available_resource = False
             ip_address = place_data.get("tags", {}).get("ip")
             for exporter_name, res_type, res_data in resource_entries:
                 params = res_data.get("params", {})
@@ -501,8 +501,8 @@ class LabgridClient:
                         params=params,
                     )
                 )
-                if not res_data.get("avail", True):
-                    is_available = False
+                if res_data.get("avail", True):
+                    has_available_resource = True
                 if not ip_address and res_data.get("avail", True):
                     extra = params.get("extra", {})
                     exporter_hostname = extra.get("proxy") or exporter_name
@@ -520,7 +520,7 @@ class LabgridClient:
                         acquired_by = res_data["acquired"]
                         break
 
-            if not is_available:
+            if not has_available_resource:
                 status = "offline"
             elif acquired_by:
                 status = "acquired"
