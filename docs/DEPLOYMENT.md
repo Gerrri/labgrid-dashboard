@@ -56,6 +56,7 @@ The image is published to: `ghcr.io/gerrri/labgrid-dashboard`
 - Docker 20.10+ installed
 - Running Labgrid coordinator (the dashboard connects to an existing coordinator)
 - Network access from the dashboard container to the coordinator
+- Network access from the dashboard container to the exporter hosts used by serial command execution
 
 ## Quick Start
 
@@ -71,6 +72,7 @@ docker run -d \
   -e CORS_ORIGINS=http://localhost \
   -v ./commands.yaml:/app/commands.yaml:ro \
   -v ./target_presets.json:/app/target_presets.json:ro \
+  -v ./exporter-ssh:/app/exporter-ssh:ro \
   ghcr.io/gerrri/labgrid-dashboard:latest
 ```
 
@@ -159,11 +161,12 @@ Examples:
 
 ## Volume Mounts
 
-The dashboard requires two configuration files to be mounted:
+The dashboard requires two configuration files and the exporter SSH bundle tree to be mounted:
 
 ```bash
 -v /path/to/commands.yaml:/app/commands.yaml:ro \
--v /path/to/target_presets.json:/app/target_presets.json:ro
+-v /path/to/target_presets.json:/app/target_presets.json:ro \
+-v /path/to/exporter-ssh:/app/exporter-ssh:ro
 ```
 
 ### commands.yaml
@@ -200,6 +203,53 @@ Defines hardware presets with associated commands. Example:
 }
 ```
 
+### exporter-ssh
+
+This directory contains one subdirectory per exporter. Each exporter bundle provides the SSH material required for serial command execution to reach that exporter over SSH.
+
+Runtime input path:
+
+- `/app/exporter-ssh/<exporter-name>/exporter.yaml`
+- optional private key file in the same exporter directory, for example `/app/exporter-ssh/<exporter-name>/id_ed25519`
+
+Generated runtime material:
+
+- `~/.ssh/config` with an include for the managed exporter SSH snippet
+- `~/.ssh/labgrid-dashboard/config`
+- `~/.ssh/labgrid-dashboard/known_hosts`
+- `~/.ssh/labgrid-dashboard/keys/<exporter-name>` when a private key is provided
+
+Supported auth modes:
+
+- private key
+- username/password
+
+Example bundle layout:
+
+```text
+exporter-ssh/
+  exporter-1/
+    exporter.yaml
+    id_ed25519
+  exporter-2/
+    exporter.yaml
+```
+
+Example `exporter.yaml`:
+
+```yaml
+alias: exporter-1
+host: 10.0.0.21
+port: 22
+ssh:
+  user: root
+  auth:
+    method: private_key
+    private_key_path: id_ed25519
+known_hosts:
+  - "exporter-1,10.0.0.21 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
+```
+
 ## Production Considerations
 
 ### Security
@@ -208,7 +258,8 @@ Defines hardware presets with associated commands. Example:
 2. **CORS Configuration**: Set `CORS_ORIGINS` to match your production domain(s)
 3. **Network Isolation**: Use Docker networks to isolate the dashboard from other services
 4. **Read-only Volumes**: Mount configuration files as read-only (`:ro` flag)
-5. **Non-root User**: The container runs as non-root user `appuser` (UID 1000)
+5. **Non-root User**: The container runs as non-root user `appuser` (UID 3000)
+6. **Exporter SSH Material**: Keep the exporter bundle tree read-only and provide trusted `known_hosts` entries for each exporter host
 
 ### Scaling
 
@@ -320,6 +371,7 @@ docker logs labgrid-dashboard
 - Coordinator URL incorrect or unreachable
 - Port 80 already in use (change port mapping: `-p 8080:80`)
 - Configuration files not mounted correctly
+- Exporter SSH bundle tree not mounted or malformed
 
 **Portainer-specific checks**:
 - Verify logs of the `labgrid-dashboard` service/container (there is no separate backend container in the production image)
@@ -339,6 +391,26 @@ docker exec labgrid-dashboard curl -v ws://coordinator:20408/ws
 ```bash
 docker exec labgrid-dashboard env | grep COORDINATOR
 ```
+
+### Serial commands fail with SSH errors
+
+Serial command execution still uses SSH to reach the exporter host. If you see connection errors, check the exporter bundle and host reachability.
+
+**Verify the bundle input exists**:
+```bash
+docker exec labgrid-dashboard ls -R /app/exporter-ssh
+```
+
+**Verify SSH runtime material**:
+```bash
+docker exec labgrid-dashboard ls -R /home/appuser/.ssh
+```
+
+**Common causes**:
+- Exporter host name or IP is wrong in the bundle
+- `known_hosts` does not match the exporter host key
+- The exporter is reachable with a private key, but the bundle is configured for username/password or vice versa
+- The dashboard container cannot reach the exporter host on port 22
 
 ### WebSocket connection fails
 

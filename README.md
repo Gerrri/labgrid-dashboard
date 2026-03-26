@@ -20,10 +20,10 @@ Labgrid Dashboard provides a real-time web interface to:
 - **Monitor status** - See which devices are available, acquired, or offline
 - **Track ownership** - Know who currently has acquired each exporter/target
 - **Quick access** - Click on IP addresses to directly access device web interfaces
-- **Execute commands** - Run predefined commands on DUTs with serial-first transport and SSH fallback
+- **Execute commands** - Run predefined commands on DUTs with serial-first transport, exporter SSH bundles, and SSH fallback
 - **Hardware Presets** - Assign hardware-specific command sets to different targets
 - **Grouped Display** - Targets are automatically grouped by their preset type
-- **Transport-aware UI** - Hide command controls on unsupported targets and show a per-device reason
+- **Transport-aware UI** - Hide command controls on unsupported targets, show a per-device reason, and surface the transport actually used for each command
 - **Real-time updates** - WebSocket-based live status updates without manual refresh
 
 > 📖 For a quick introduction, see the [Quick Start Guide](quick-start.md).
@@ -60,7 +60,7 @@ Labgrid Dashboard provides a real-time web interface to:
 docker pull ghcr.io/gerrri/labgrid-dashboard:latest
 
 # Or pin to a specific version (recommended for production)
-docker pull ghcr.io/gerrri/labgrid-dashboard:1.0.0
+docker pull ghcr.io/gerrri/labgrid-dashboard:v0.1.4
 ```
 
 ### Quick Start
@@ -70,6 +70,7 @@ docker run -d \
   --name labgrid-dashboard \
   -p 80:80 \
   -e COORDINATOR_URL=ws://your-coordinator:20408/ws \
+  -v ./exporter-ssh:/app/exporter-ssh:ro \
   ghcr.io/gerrri/labgrid-dashboard:latest
 ```
 
@@ -124,6 +125,38 @@ The frontend normalizes runtime URL settings to avoid malformed paths:
 - `API_URL`: `""`, `/`, `/api`, `/api/` all resolve correctly (no `/api/api/*`)
 - `WS_URL`: relative and absolute values are normalized to a valid WebSocket URL
 
+### Exporter SSH Bundles
+
+Serial command execution still reaches exporters over SSH. The backend expects an exporter SSH bundle tree at runtime and generates the SSH material it needs from that input.
+
+Runtime input path:
+
+- `/app/exporter-ssh/<exporter-name>/exporter.yaml`
+- optional key files in the same exporter directory, such as `/app/exporter-ssh/<exporter-name>/id_ed25519`
+
+Generated runtime SSH material:
+
+- `~/.ssh/config` with an include for the managed exporter config
+- `~/.ssh/labgrid-dashboard/config`
+- `~/.ssh/labgrid-dashboard/known_hosts`
+- `~/.ssh/labgrid-dashboard/keys/<exporter-name>` when a private key is provided
+
+Supported auth modes:
+
+- private key
+- username/password
+
+Example bundle layout:
+
+```text
+/app/exporter-ssh/
+  exporter-1/
+    exporter.yaml
+    id_ed25519
+  exporter-2/
+    exporter.yaml
+```
+
 ### Example: Production with Docker Compose
 
 ```yaml
@@ -139,6 +172,7 @@ services:
     volumes:
       - ./commands.yaml:/app/commands.yaml:ro
       - ./target_presets.json:/app/target_presets.json:ro
+      - ./exporter-ssh:/app/exporter-ssh:ro
     restart: unless-stopped
 ```
 
@@ -164,7 +198,7 @@ docker compose up -d
 - Backend API: http://localhost:8000
 
 ### Staging Mode
-Runs with simulated DUTs (Alpine Linux containers) and real Labgrid Exporters. Commands prefer a serial shell and fall back to SSH if serial execution is not available for the target/preset.
+Runs with simulated DUTs (Alpine Linux containers) and real Labgrid exporters. Commands prefer a serial shell and still reach exporters over SSH through the exporter bundle configuration. If serial execution is not available for the target/preset, the backend falls back to SSH when the preset allows it.
 
 If the backend starts before the coordinator becomes reachable, it remains available in degraded mode and retries the coordinator connection automatically in the background.
 
@@ -175,15 +209,20 @@ docker compose --profile staging up -d --build
 
 **Ports**: Same as development mode
 
-**Auto-Acquire Feature:**
-When starting in staging mode, an init-container automatically:
-1. Creates a place named `exporter-1`
-2. Matches it with the exporter-1 resources
-3. Acquires the place as `staging-user`
+**Staging Topology:**
+The staging profile creates four places and leaves all of them idle by default:
 
-This demonstrates the "acquired" status in the dashboard with:
-- `exporter-1`: Status "acquired", acquired_by: "staging-user"
-- `exporter-2`, `exporter-3`: Status "available"
+- `exporter-1`: serial-only command execution
+- `exporter-2`: serial-first command execution with SSH fallback
+- `exporter-3`: SSH command execution using a DUT private key
+- `exporter-4`: SSH command execution using DUT username/password
+
+The exporter SSH bundle coverage in staging also exercises both supported exporter auth modes:
+
+- `exporter-1`: exporter reached through a private key bundle
+- `exporter-4`: exporter reached through a username/password bundle
+
+After running a command, the UI updates the `Command transport:` label to the transport that was actually used for the latest execution. For example, `exporter-2` switches from `serial` to `ssh` after the SSH fallback path succeeds.
 
 **Staging Architecture:**
 ```
@@ -191,15 +230,15 @@ This demonstrates the "acquired" status in the dashboard with:
 │                     Staging Environment                      │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  ┌─────────┐   ┌─────────┐   ┌─────────┐                   │
-│  │  DUT-1  │   │  DUT-2  │   │  DUT-3  │  (Alpine Linux)   │
-│  │ :5000   │   │ :5000   │   │ :5000   │                   │
-│  └────┬────┘   └────┬────┘   └────┬────┘                   │
-│       │ Serial     │ Serial     │ Serial                   │
-│  ┌────▼────┐   ┌────▼────┐   ┌────▼────┐                   │
-│  │Exporter1│   │Exporter2│   │Exporter3│  (labgrid)        │
-│  └────┬────┘   └────┬────┘   └────┬────┘                   │
-│       └──────────┬──┴──────────────┘ gRPC                  │
+│  ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐      │
+│  │  DUT-1  │   │  DUT-2  │   │  DUT-3  │   │  DUT-4  │      │
+│  │ :5000   │   │ :5000   │   │ :5000   │   │ :5000   │      │
+│  └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘      │
+│       │ Serial     │ Serial     │ SSH        │ SSH         │
+│  ┌────▼────┐   ┌────▼────┐   ┌────▼────┐   ┌────▼────┐      │
+│  │Exporter1│   │Exporter2│   │Exporter3│   │Exporter4│      │
+│  └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘      │
+│       └─────────────┴─────────────┴─────────────┘ gRPC      │
 │            ┌─────▼─────┐                                    │
 │            │Coordinator│  (labgrid 24.0+)                  │
 │            └─────┬─────┘                                    │
@@ -218,13 +257,16 @@ This demonstrates the "acquired" status in the dashboard with:
 1. Frontend sends command request to Backend via HTTP
 2. Backend resolves the target's preset and `command_execution` transport order
 3. Backend prefers serial execution through Labgrid's `SerialDriver` + `ShellDriver`
-4. If serial is unavailable or transport setup fails, Backend falls back to `labgrid-client ssh` when SSH is allowed by the preset
-5. Scheduled commands, REST requests, and WebSocket-triggered commands all use the same backend execution service
-6. Output flows back through the same path
+4. Serial command execution still reaches the exporter over SSH via the exporter bundle configuration
+5. If serial is unavailable or transport setup fails, Backend falls back to the backend-managed `SSHDriver` when SSH is allowed by the preset
+6. The frontend shows the transport that was actually used for the latest command result
+7. Scheduled commands, REST requests, and WebSocket-triggered commands all use the same backend execution service
+8. Output flows back through the same path
 
 **Supported Execution Transports:**
 - **Serial shell** - Uses a `NetworkSerialPort` and Labgrid's `ShellDriver`, including login automation and prompt detection
-- **SSH fallback** - Uses `labgrid-client ssh` when a `NetworkService` is available and the preset allows SSH
+- **Exporter SSH bundles** - Provide exporter host/IP, `known_hosts`, and optional key material for serial transport
+- **SSH fallback** - Uses the backend-managed `SSHDriver` when a `NetworkService` is available and the preset allows SSH
 - **Unsupported** - If neither transport is available, the backend marks the target as not command-capable and the UI hides command controls for that device
 
 ### Command Execution Configuration
