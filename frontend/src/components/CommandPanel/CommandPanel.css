@@ -14,17 +14,6 @@
   min-height: 150px;
 }
 
-.command-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.command-panel-header--actions {
-  justify-content: flex-end;
-}
-
 .btn-clear {
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
@@ -38,6 +27,16 @@
 .btn-clear:hover {
   background-color: var(--color-hover);
   color: var(--color-text);
+}
+
+.btn-clear-terminal {
+  border-color: #4b5563;
+  color: #d1d5db;
+}
+
+.btn-clear-terminal:hover {
+  background-color: #374151;
+  color: #f9fafb;
 }
 
 /* Loading Spinner */
