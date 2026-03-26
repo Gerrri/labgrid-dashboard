@@ -1,0 +1,12 @@
+alias: exporter-4
+host: exporter-4
+port: 22
+
+ssh:
+  user: root
+  auth:
+    method: password
+    password_env: EXPORTER_4_SSH_PASSWORD
+
+known_hosts:
+  - "exporter-4 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJLkk3+sXhf/xiaAXRozQMHWo6saXSIV3RyepnI42a2T"

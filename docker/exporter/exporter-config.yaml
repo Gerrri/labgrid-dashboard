@@ -1,10 +1,10 @@
 __EXPORTER_NAME__:
   NetworkSerialPort:
-    host: "__DUT_HOST__"
-    port: __DUT_PORT__
+    host: "__SERIAL_HOST__"
+    port: __SERIAL_PORT__
     speed: 115200
     protocol: "raw"
   NetworkService:
-    address: "__DUT_HOST__"
-    username: "root"
-    password: "labgrid"
+    address: "__SSH_ADDRESS__"
+    username: "__SSH_USERNAME__"
+    password: "__SSH_PASSWORD__"

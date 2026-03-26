@@ -3,7 +3,7 @@
 #
 # Profiles:
 #   - default (no profile): Runs coordinator, backend, frontend
-#   - staging: Adds 3 DUTs and exporters for realistic testing
+#   - staging: Adds 4 DUTs and exporters for realistic testing
 
 services:
   # =============================================================================
@@ -46,11 +46,18 @@ services:
       - COORDINATOR_REALM=realm1
       - COORDINATOR_TIMEOUT=30
       - PYTHONUNBUFFERED=1
+      - EXPORTER_SSH_BUNDLES_DIR=/app/exporter-ssh
+      - EXPORTER_2_SSH_PASSWORD=exporter-2-password
+      - EXPORTER_4_SSH_PASSWORD=exporter-4-password
+      - EXPORTER_3_DUT_SSH_KEYFILE=/root/.ssh/labgrid-dashboard/keys/exporter-3
     depends_on:
       coordinator:
         condition: service_healthy
     networks:
       - labgrid-network
+    volumes:
+      - ./docker/staging/exporter-ssh:/app/exporter-ssh:ro
+      - ./docker/staging/dut-ssh:/app/dut-ssh:ro
     restart: unless-stopped
 
   # React Frontend - Development server with Vite
@@ -113,6 +120,26 @@ services:
     profiles: ["staging"]
     environment:
       - DUT_NAME=dut-3
+      - DUT_SSH_AUTH_MODE=private_key
+      - DUT_SSH_SERVER_DIR=/ssh-server
+    networks:
+      - labgrid-network
+    volumes:
+      - ./docker/staging/dut-server/exporter-3:/ssh-server:ro
+    restart: unless-stopped
+
+  # DUT 4 - Simulated device with serial-over-TCP
+  dut-4:
+    build:
+      context: ./docker/dut
+      dockerfile: Dockerfile
+    container_name: labgrid-dut-4
+    hostname: dut-4
+    profiles: ["staging"]
+    environment:
+      - DUT_NAME=dut-4
+      - DUT_SSH_AUTH_MODE=password
+      - DUT_SSH_PASSWORD=labgrid
     networks:
       - labgrid-network
     restart: unless-stopped
@@ -134,14 +161,19 @@ services:
       - DUT_PORT=5000
       - EXPORTER_NAME=exporter-1
       - COORDINATOR_URL=ws://coordinator:20408/ws
+      - EXPORTER_ISOLATED=1
+      - EXPORTER_HOSTNAME=exporter-1
+      - EXPORTER_SSH_AUTH_MODE=private_key
     depends_on:
       - dut-1
       - coordinator
     networks:
       - labgrid-network
+    volumes:
+      - ./docker/staging/exporter-server/exporter-1:/ssh-server:ro
     restart: unless-stopped
 
-  # Exporter 2 - Exports DUT-2 to Labgrid Coordinator
+  # Exporter 2 - Exports DUT-2 to Labgrid Coordinator with password auth
   exporter-2:
     build:
       context: ./docker/exporter
@@ -152,16 +184,23 @@ services:
     environment:
       - DUT_HOST=dut-2
       - DUT_PORT=5000
+      - SERIAL_PORT=5999
       - EXPORTER_NAME=exporter-2
       - COORDINATOR_URL=ws://coordinator:20408/ws
+      - EXPORTER_ISOLATED=1
+      - EXPORTER_HOSTNAME=exporter-2
+      - EXPORTER_SSH_AUTH_MODE=password
+      - EXPORTER_SSH_PASSWORD=exporter-2-password
     depends_on:
       - dut-2
       - coordinator
     networks:
       - labgrid-network
+    volumes:
+      - ./docker/staging/exporter-server/exporter-2:/ssh-server:ro
     restart: unless-stopped
 
-  # Exporter 3 - Exports DUT-3 to Labgrid Coordinator
+  # Exporter 3 - Exports DUT-3 to Labgrid Coordinator with key auth
   exporter-3:
     build:
       context: ./docker/exporter
@@ -172,35 +211,65 @@ services:
     environment:
       - DUT_HOST=dut-3
       - DUT_PORT=5000
+      - SSH_PASSWORD=
       - EXPORTER_NAME=exporter-3
       - COORDINATOR_URL=ws://coordinator:20408/ws
+      - EXPORTER_ISOLATED=1
+      - EXPORTER_HOSTNAME=exporter-3
+      - EXPORTER_SSH_AUTH_MODE=private_key
+      - EXPORTER_SSH_SERVER_DIR=/ssh-server
     depends_on:
       - dut-3
       - coordinator
     networks:
       - labgrid-network
+    volumes:
+      - ./docker/staging/exporter-server/exporter-3:/ssh-server:ro
+    restart: unless-stopped
+
+  # Exporter 4 - Exports DUT-4 to Labgrid Coordinator with password auth
+  exporter-4:
+    build:
+      context: ./docker/exporter
+      dockerfile: Dockerfile
+    container_name: labgrid-exporter-4
+    hostname: exporter-4
+    profiles: ["staging"]
+    environment:
+      - DUT_HOST=dut-4
+      - DUT_PORT=5000
+      - EXPORTER_NAME=exporter-4
+      - COORDINATOR_URL=ws://coordinator:20408/ws
+      - EXPORTER_ISOLATED=1
+      - EXPORTER_HOSTNAME=exporter-4
+      - EXPORTER_SSH_AUTH_MODE=password
+      - EXPORTER_SSH_PASSWORD=exporter-4-password
+    depends_on:
+      - dut-4
+      - coordinator
+    networks:
+      - labgrid-network
+    volumes:
+      - ./docker/staging/exporter-server/exporter-4:/ssh-server:ro
     restart: unless-stopped
 
   # =============================================================================
-  # Staging Profile: Init Container for Auto-Acquire
+  # Staging Profile: Init Container for Place Setup
   # =============================================================================
 
-  # Init-Acquire - Automatically acquires exporter-1 for demonstration
-  # This runs once at startup to show "acquired" status in the dashboard
-  init-acquire:
+  # Init-Places - Creates all exporter places without acquiring any of them
+  init-places:
     build:
       context: ./docker/init-acquire
       dockerfile: Dockerfile
-    container_name: labgrid-init-acquire
+    container_name: labgrid-init-places
     profiles: ["staging"]
     environment:
       # Coordinator connection (host:port format for labgrid-client)
       - COORDINATOR_HOST=coordinator:20408
-      # Place name to create and acquire
-      - PLACE_NAME=exporter-1
-      # Exporter to match resources from
-      - EXPORTER_NAME=exporter-1
-      # Username shown in dashboard as "acquired_by"
+      # Leave empty to avoid acquiring any place by default
+      - ACQUIRE_PLACE=none
+      # Username used for labgrid-client operations
       - USER_NAME=staging-user
       # Wait time for services to initialize
       - WAIT_TIME=15
@@ -212,6 +281,8 @@ services:
       exporter-2:
         condition: service_started
       exporter-3:
+        condition: service_started
+      exporter-4:
         condition: service_started
     networks:
       - labgrid-network

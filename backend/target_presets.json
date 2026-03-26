@@ -1,1 +1,8 @@
-{}
+{
+  "assignments": {
+    "exporter-1": "staging_serial_only",
+    "exporter-2": "staging_serial_fallback",
+    "exporter-3": "staging_ssh_key",
+    "exporter-4": "staging_ssh_password"
+  }
+}
