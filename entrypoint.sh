@@ -5,7 +5,7 @@ set -e
 # This file is loaded by the browser before the main application
 API_URL_VALUE="${API_URL_EXTERNAL-/api}"
 WS_URL_VALUE="${WS_URL_EXTERNAL-/api/ws}"
-APP_VERSION_VALUE="${APP_VERSION-dev}"
+APP_VERSION_VALUE="${IMAGE_APP_VERSION:-${APP_VERSION:-dev}}"
 
 cat > /var/www/html/env-config.js <<EOF
 // Runtime environment configuration
