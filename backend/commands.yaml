@@ -134,6 +134,11 @@ presets:
       - name: "System Time"
         command: "date"
         description: "Current system time"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"
 
   staging_serial_fallback:
     name: "Staging Serial With SSH Fallback"
@@ -154,6 +159,11 @@ presets:
       - name: "System Time"
         command: "date"
         description: "Current system time"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"
 
   staging_ssh_key:
     name: "Staging SSH With Key"
@@ -170,6 +180,11 @@ presets:
       - name: "System Time"
         command: "date"
         description: "Current system time"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"
 
   staging_ssh_password:
     name: "Staging SSH With Password"
@@ -184,3 +199,8 @@ presets:
       - name: "System Time"
         command: "date"
         description: "Current system time"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"

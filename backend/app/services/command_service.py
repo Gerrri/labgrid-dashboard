@@ -108,6 +108,10 @@ class CommandService:
                 )
                 for cmd in preset_data.get("scheduled_commands", [])
             ]
+            self._validate_unique_scheduled_command_names(
+                preset_id,
+                scheduled_commands,
+            )
 
             auto_refresh = preset_data.get("auto_refresh_commands", [])
             command_execution = self._parse_command_execution_config(
@@ -147,6 +151,27 @@ class CommandService:
             f"{total_scheduled} total scheduled commands"
         )
 
+    def _validate_unique_scheduled_command_names(
+        self,
+        preset_id: str,
+        scheduled_commands: List[ScheduledCommand],
+    ) -> None:
+        """Reject duplicate scheduled command display names inside one preset."""
+        seen_names: set[str] = set()
+        duplicate_names: set[str] = set()
+
+        for command in scheduled_commands:
+            if command.name in seen_names:
+                duplicate_names.add(command.name)
+            seen_names.add(command.name)
+
+        if duplicate_names:
+            duplicates = ", ".join(sorted(duplicate_names))
+            raise ValueError(
+                "Duplicate scheduled command names are not allowed within "
+                f"preset '{preset_id}': {duplicates}"
+            )
+
     def _load_legacy_format(self, data: dict) -> None:
         """Load the legacy flat format (for backwards compatibility).
 
@@ -173,6 +198,7 @@ class CommandService:
             )
             for cmd in data.get("scheduled_commands", [])
         ]
+        self._validate_unique_scheduled_command_names("basic", scheduled_commands)
 
         self._legacy_config = CommandsConfig(
             commands=commands,

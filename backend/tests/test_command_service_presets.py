@@ -191,6 +191,45 @@ scheduled_commands:
             finally:
                 os.unlink(f.name)
 
+    def test_duplicate_scheduled_command_names_in_same_preset_are_rejected(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Duplicate scheduled command display names inside one preset should fail loading."""
+        duplicate_yaml_content = """
+default_preset: basic
+
+presets:
+  basic:
+    name: "Basic"
+    description: "Standard Linux commands"
+    scheduled_commands:
+      - name: "Version"
+        command: "cat /etc/version"
+        interval_seconds: 60
+        description: "OS version"
+      - name: "Version"
+        command: "cat /etc/os-release"
+        interval_seconds: 120
+        description: "OS release"
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(duplicate_yaml_content)
+            f.flush()
+
+            try:
+                service = CommandService(commands_file=f.name)
+                service.load()
+
+                assert service.get_presets() == []
+                assert service.get_scheduled_commands() == []
+                assert (
+                    "Duplicate scheduled command names are not allowed within preset"
+                    in caplog.text
+                )
+            finally:
+                os.unlink(f.name)
+
     def test_get_scheduled_commands_for_preset(self, presets_yaml_content: str):
         """Test getting scheduled commands for a specific preset."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -205,6 +244,37 @@ scheduled_commands:
                 assert len(scheduled) == 1
                 assert scheduled[0].name == "Temperature"
                 assert scheduled[0].interval_seconds == 30
+            finally:
+                os.unlink(f.name)
+
+    def test_duplicate_scheduled_command_names_in_legacy_format_are_rejected(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Duplicate scheduled command display names should also fail in legacy mode."""
+        duplicate_yaml_content = """
+scheduled_commands:
+  - name: "Version"
+    command: "cat /etc/version"
+    interval_seconds: 60
+  - name: "Version"
+    command: "cat /etc/os-release"
+    interval_seconds: 120
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(duplicate_yaml_content)
+            f.flush()
+
+            try:
+                service = CommandService(commands_file=f.name)
+                service.load()
+
+                assert service.get_presets() == []
+                assert service.get_scheduled_commands() == []
+                assert (
+                    "Duplicate scheduled command names are not allowed within preset"
+                    in caplog.text
+                )
             finally:
                 os.unlink(f.name)
 

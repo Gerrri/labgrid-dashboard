@@ -409,6 +409,10 @@ presets:
         interval_seconds: 30
 ```
 
+Scheduled command names must be unique within each preset. The scheduler uses the
+display name as the column key in the UI, so duplicate names inside the same
+preset are rejected during configuration loading.
+
 **Preset Assignment:**
 - Targets are assigned to presets via the Settings icon (⚙️) in the expanded target view
 - Assignments are stored in `target_presets.json`
