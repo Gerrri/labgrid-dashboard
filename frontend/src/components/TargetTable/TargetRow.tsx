@@ -1,6 +1,12 @@
 import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import type { Target, CommandOutput, ScheduledCommand } from "../../types";
+import type {
+  Target,
+  CommandOutput,
+  ScheduledCommand,
+  ScheduledCommandOutput,
+  ExecutionTransport,
+} from "../../types";
 import { StatusBadge } from "./StatusBadge";
 import { CommandPanel } from "../CommandPanel";
 import { TargetSettings } from "../TargetSettings";
@@ -114,6 +120,34 @@ export function TargetRow({
 
   const handleOutputsChange = (outputs: CommandOutput[]) => {
     onCommandOutputsChange?.(target.name, outputs);
+  };
+
+  const getTransportLabel = () => {
+    const getOutputTransport = (
+      output:
+        | CommandOutput
+        | ScheduledCommandOutput
+        | null
+        | undefined,
+    ): ExecutionTransport | null => output?.execution_transport ?? null;
+
+    const latestManualOutput =
+      (commandOutputs && commandOutputs.length > 0
+        ? commandOutputs[0]
+        : target.last_command_outputs[0]) ?? null;
+
+    const latestScheduledOutput =
+      Object.values(target.scheduled_outputs ?? {}).sort(
+        (left, right) =>
+          Date.parse(right.timestamp) - Date.parse(left.timestamp),
+      )[0] ?? null;
+
+    return (
+      getOutputTransport(latestManualOutput) ??
+      getOutputTransport(latestScheduledOutput) ??
+      target.command_transport ??
+      null
+    );
   };
 
   const renderIpAddress = () => {
@@ -277,7 +311,7 @@ export function TargetRow({
     (target.status === "offline"
       ? "Commands unavailable - target is offline"
       : "Commands unavailable for this target");
-  const commandTransport = target.command_transport ?? null;
+  const commandTransport = getTransportLabel();
 
   return (
     <>

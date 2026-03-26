@@ -43,7 +43,15 @@ const mockTargets: Target[] = [
         params: { host: "192.168.1.100", port: 4001 },
       },
     ],
-    last_command_outputs: [],
+    last_command_outputs: [
+      {
+        command: "echo test",
+        output: "test",
+        timestamp: new Date().toISOString(),
+        exit_code: 0,
+        execution_transport: "ssh",
+      },
+    ],
     scheduled_outputs: {},
     command_capable: true,
     command_transport: "serial",
@@ -175,8 +183,29 @@ describe("TargetTable", () => {
       expect(screen.getByText("Commands for test-dut-1")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Command transport: serial")).toBeInTheDocument();
+    expect(screen.getByText("Command transport: ssh")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Transport used for this execution"),
+    ).toHaveTextContent("ssh");
     expect(screen.getByRole("button", { name: "Test Command" })).toBeInTheDocument();
+  });
+
+  it("falls back to the target-level transport when no command output transport is available", async () => {
+    render(
+      <TargetTable
+        targets={[mockTargets[1]]}
+        loading={false}
+        onCommandComplete={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /expand details/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Commands for test-dut-2")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Command transport: ssh")).toBeInTheDocument();
   });
 
   it("hides the command panel and shows an error for incapable targets", async () => {

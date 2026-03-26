@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { WSMessage, Target, CommandOutput } from '../types';
+import type {
+  WSMessage,
+  Target,
+  CommandOutput,
+  ScheduledCommandOutput,
+} from '../types';
 import { buildWsUrl } from '../utils/urlBuilder';
 
 const RECONNECT_INTERVAL = 5000;
@@ -8,7 +13,11 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 interface UseWebSocketOptions {
   onTargetUpdate?: (target: Target) => void;
   onCommandOutput?: (targetName: string, output: CommandOutput) => void;
-  onScheduledOutput?: (targetName: string, commandName: string, output: CommandOutput) => void;
+  onScheduledOutput?: (
+    targetName: string,
+    commandName: string,
+    output: ScheduledCommandOutput,
+  ) => void;
   onTargetsList?: (targets: Target[]) => void;
   onConnectionChange?: (connected: boolean) => void;
 }
@@ -86,7 +95,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
               const data = message.data as {
                 target: string;
                 command_name: string;
-                output: CommandOutput;
+                output: ScheduledCommandOutput;
               };
               callbacksRef.current.onScheduledOutput?.(
                 data.target,

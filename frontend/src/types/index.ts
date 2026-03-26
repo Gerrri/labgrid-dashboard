@@ -14,6 +14,7 @@ export interface CommandOutput {
   output: string;
   timestamp: string;
   exit_code: number;
+  execution_transport?: ExecutionTransport | null;
 }
 
 /**
@@ -24,6 +25,7 @@ export interface ScheduledCommandOutput {
   output: string;
   timestamp: string;
   exit_code: number;
+  execution_transport?: ExecutionTransport | null;
 }
 
 /**

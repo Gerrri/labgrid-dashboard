@@ -245,6 +245,16 @@
   color: #9ca3af;
 }
 
+.transport-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background-color: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  font-weight: 500;
+}
+
 .output-content {
   margin: 0;
   padding: 1rem;
