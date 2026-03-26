@@ -69,8 +69,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_API_URL=http://localhost:8000
-      - VITE_WS_URL=ws://localhost:8000/api/ws
+      - VITE_API_URL=/api
+      - VITE_WS_URL=/api/ws
+      - VITE_API_PROXY_TARGET=http://backend:8000
+      - VITE_HMR_HOST=localhost
+      - VITE_HMR_CLIENT_PORT=3000
+      - VITE_HMR_PROTOCOL=ws
       - CHOKIDAR_USEPOLLING=true
     depends_on:
       - backend
