@@ -4,8 +4,6 @@ import type {
   Target,
   CommandOutput,
   ScheduledCommand,
-  ScheduledCommandOutput,
-  ExecutionTransport,
 } from "../../types";
 import { StatusBadge } from "./StatusBadge";
 import { CommandPanel } from "../CommandPanel";
@@ -120,34 +118,6 @@ export function TargetRow({
 
   const handleOutputsChange = (outputs: CommandOutput[]) => {
     onCommandOutputsChange?.(target.name, outputs);
-  };
-
-  const getTransportLabel = () => {
-    const getOutputTransport = (
-      output:
-        | CommandOutput
-        | ScheduledCommandOutput
-        | null
-        | undefined,
-    ): ExecutionTransport | null => output?.execution_transport ?? null;
-
-    const latestManualOutput =
-      (commandOutputs && commandOutputs.length > 0
-        ? commandOutputs[0]
-        : target.last_command_outputs[0]) ?? null;
-
-    const latestScheduledOutput =
-      Object.values(target.scheduled_outputs ?? {}).sort(
-        (left, right) =>
-          Date.parse(right.timestamp) - Date.parse(left.timestamp),
-      )[0] ?? null;
-
-    return (
-      getOutputTransport(latestManualOutput) ??
-      getOutputTransport(latestScheduledOutput) ??
-      target.command_transport ??
-      null
-    );
   };
 
   const renderIpAddress = () => {
@@ -311,7 +281,6 @@ export function TargetRow({
     (target.status === "offline"
       ? "Commands unavailable - target is offline"
       : "Commands unavailable for this target");
-  const commandTransport = getTransportLabel();
 
   return (
     <>
@@ -357,22 +326,15 @@ export function TargetRow({
                 /* Command Panel Section */
                 <div className="details-section">
                   {canExecuteCommands ? (
-                    <>
-                      {commandTransport && (
-                        <div className="command-transport-indicator text-muted">
-                          Command transport: {commandTransport}
-                        </div>
-                      )}
-                      <CommandPanel
-                        targetName={target.name}
-                        initialOutputs={target.last_command_outputs}
-                        persistedOutputs={commandOutputs}
-                        onCommandStart={handleCommandStart}
-                        onCommandComplete={handleCommandComplete}
-                        onOutputsChange={handleOutputsChange}
-                        onSettingsClick={handleSettingsClick}
-                      />
-                    </>
+                    <CommandPanel
+                      targetName={target.name}
+                      initialOutputs={target.last_command_outputs}
+                      persistedOutputs={commandOutputs}
+                      onCommandStart={handleCommandStart}
+                      onCommandComplete={handleCommandComplete}
+                      onOutputsChange={handleOutputsChange}
+                      onSettingsClick={handleSettingsClick}
+                    />
                   ) : (
                     <div className="commands-unavailable" role="alert">
                       <p className="commands-unavailable-title">

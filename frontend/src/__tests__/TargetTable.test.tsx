@@ -180,17 +180,19 @@ describe("TargetTable", () => {
     fireEvent.click(screen.getByRole("button", { name: /expand details/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Commands for test-dut-1")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Test Command" }),
+      ).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Command transport: ssh")).toBeInTheDocument();
+    expect(screen.queryByText("Commands for test-dut-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("Command transport: ssh")).not.toBeInTheDocument();
     expect(
       screen.getByTitle("Transport used for this execution"),
     ).toHaveTextContent("ssh");
-    expect(screen.getByRole("button", { name: "Test Command" })).toBeInTheDocument();
   });
 
-  it("falls back to the target-level transport when no command output transport is available", async () => {
+  it("renders the command panel without a transport banner when no output exists", async () => {
     render(
       <TargetTable
         targets={[mockTargets[1]]}
@@ -202,10 +204,13 @@ describe("TargetTable", () => {
     fireEvent.click(screen.getByRole("button", { name: /expand details/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Commands for test-dut-2")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Test Command" }),
+      ).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Command transport: ssh")).toBeInTheDocument();
+    expect(screen.queryByText("Commands for test-dut-2")).not.toBeInTheDocument();
+    expect(screen.queryByText("Command transport: ssh")).not.toBeInTheDocument();
   });
 
   it("hides the command panel and shows an error for incapable targets", async () => {

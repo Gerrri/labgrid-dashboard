@@ -139,9 +139,8 @@ export function CommandPanel({
 
   return (
     <div className="command-panel">
-      <div className="command-panel-header">
-        <h4>Commands for {targetName}</h4>
-        {outputs.length > 0 && (
+      {outputs.length > 0 && (
+        <div className="command-panel-header command-panel-header--actions">
           <button
             className="btn-clear"
             onClick={handleClearOutput}
@@ -149,8 +148,8 @@ export function CommandPanel({
           >
             Clear
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && (
         <div className="command-error">

@@ -181,11 +181,6 @@
   margin-bottom: 0;
 }
 
-.command-transport-indicator {
-  margin-bottom: 0.75rem;
-  font-size: 0.875rem;
-}
-
 .commands-unavailable {
   padding: 1rem;
   border: 1px solid var(--color-border);
