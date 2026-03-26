@@ -114,6 +114,39 @@ describe("TargetTable", () => {
     expect(screen.getByText("test-dut-3")).toBeInTheDocument();
   });
 
+  it("renders the preset description as an info symbol in the preset header", () => {
+    render(
+      <TargetTable
+        targets={[mockTargets[0]]}
+        loading={false}
+        onCommandComplete={vi.fn()}
+        showPresetHeader={true}
+        preset={{
+          id: "tac",
+          name: "TAC",
+          description: "Serial-first preset for labgrid exporters",
+          commands: [],
+          scheduled_commands: [],
+          auto_refresh_commands: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("TAC")).toBeInTheDocument();
+    const trigger = screen.getByLabelText(
+      "Preset description: Serial-first preset for labgrid exporters",
+    );
+
+    expect(trigger).toHaveTextContent("i");
+    expect(trigger).toHaveAttribute(
+      "data-tooltip",
+      "Serial-first preset for labgrid exporters",
+    );
+    expect(
+      screen.queryByText("Serial-first preset for labgrid exporters"),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders status badges", () => {
     render(
       <TargetTable

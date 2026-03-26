@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import type { CSSProperties } from "react";
 import type {
   Target,
   CommandOutput,
@@ -75,12 +76,13 @@ export function TargetTable({
 
   // Calculate total columns for expanded row colspan
   const totalColumns = 5 + effectiveScheduledCommands.length;
-
-  // Format target count text
-  const targetCountText = useMemo(() => {
-    const count = sortedTargets.length;
-    return `${count} Target${count !== 1 ? "s" : ""}`;
-  }, [sortedTargets.length]);
+  const tableStyle = useMemo(
+    () =>
+      ({
+        "--scheduled-column-count": effectiveScheduledCommands.length,
+      }) as CSSProperties,
+    [effectiveScheduledCommands.length],
+  );
 
   // Show empty state only when not loading and no targets
   if (!loading && sortedTargets.length === 0) {
@@ -97,12 +99,18 @@ export function TargetTable({
       {showPresetHeader && preset && (
         <div className="preset-table-header">
           <h2 className="preset-name">
-            {preset.name}{" "}
-            <span className="preset-target-count">({targetCountText})</span>
+            <span className="preset-name-label">{preset.name}</span>
+            {preset.description && (
+              <span
+                className="preset-description-trigger"
+                data-tooltip={preset.description}
+                aria-label={`Preset description: ${preset.description}`}
+                tabIndex={0}
+              >
+                i
+              </span>
+            )}
           </h2>
-          {preset.description && (
-            <p className="preset-description">{preset.description}</p>
-          )}
         </div>
       )}
       {/* Show loading overlay instead of replacing the entire table */}
@@ -114,7 +122,17 @@ export function TargetTable({
       )}
       {sortedTargets.length > 0 && (
         <>
-          <table className="target-table">
+          <table className="target-table" style={tableStyle}>
+            <colgroup>
+              <col className="col-name" />
+              <col className="col-status" />
+              <col className="col-acquired-by" />
+              <col className="col-ip-address" />
+              {effectiveScheduledCommands.map((cmd) => (
+                <col key={cmd.name} className="col-scheduled" />
+              ))}
+              <col className="col-actions" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Name</th>
