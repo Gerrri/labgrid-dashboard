@@ -10,9 +10,10 @@ the scheduled commands defined in that target's assigned preset.
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from copy import deepcopy
-from typing import Callable, Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set, Union
 
 from app.models.target import ScheduledCommand, ScheduledCommandOutput
 
@@ -22,6 +23,15 @@ SCHEDULER_ERROR_BACKOFF_INITIAL = 5
 SCHEDULER_ERROR_BACKOFF_MAX = 60
 
 
+@dataclass(frozen=True)
+class _ScheduledCommandRegistration:
+    """Internal scheduler registration for a preset-scoped command."""
+
+    key: str
+    preset_id: str
+    command: ScheduledCommand
+
+
 class SchedulerService:
     """Service for executing scheduled commands periodically with preset support."""
 
@@ -29,11 +39,12 @@ class SchedulerService:
         """Initialize the scheduler service."""
         # All unique scheduled commands from all presets (for display in UI)
         self._all_commands: List[ScheduledCommand] = []
+        self._command_registrations: List[_ScheduledCommandRegistration] = []
         # Scheduled commands per preset: preset_id -> List[ScheduledCommand]
         self._preset_commands: Dict[str, List[ScheduledCommand]] = {}
-        # Latest outputs: command_name -> target_name -> output
+        # Latest outputs keyed by internal registration key -> target_name -> output
         self._outputs: Dict[str, Dict[str, ScheduledCommandOutput]] = {}
-        # Running tasks for each command
+        # Running tasks keyed by internal registration key
         self._tasks: Dict[str, asyncio.Task] = {}
         # Callback for executing commands on targets
         self._execute_callback: Optional[Callable] = None
@@ -58,12 +69,20 @@ class SchedulerService:
             commands: List of scheduled commands to execute.
         """
         self._all_commands = commands
+        self._command_registrations = [
+            _ScheduledCommandRegistration(
+                key=cmd.name,
+                preset_id="basic",
+                command=cmd,
+            )
+            for cmd in commands
+        ]
         # Treat all commands as belonging to a "basic" preset
         self._preset_commands = {"basic": commands}
         # Initialize output storage for each command
-        for cmd in commands:
-            if cmd.name not in self._outputs:
-                self._outputs[cmd.name] = {}
+        self._outputs = {
+            registration.key: {} for registration in self._command_registrations
+        }
         logger.info(f"Configured {len(commands)} scheduled commands (legacy mode)")
 
     def set_preset_commands(
@@ -76,16 +95,27 @@ class SchedulerService:
         """
         self._preset_commands = preset_commands
 
-        # Build list of all unique commands for backwards compatibility
+        # Build registrations for every preset-scoped command while preserving
+        # a unique display-name list for the existing UI/API surface.
         seen_names: Set[str] = set()
         self._all_commands = []
-        for commands in preset_commands.values():
-            for cmd in commands:
+        self._command_registrations = []
+        for preset_id, commands in preset_commands.items():
+            for index, cmd in enumerate(commands):
+                self._command_registrations.append(
+                    _ScheduledCommandRegistration(
+                        key=self._build_registration_key(preset_id, cmd, index),
+                        preset_id=preset_id,
+                        command=cmd,
+                    )
+                )
                 if cmd.name not in seen_names:
                     seen_names.add(cmd.name)
                     self._all_commands.append(cmd)
-                    if cmd.name not in self._outputs:
-                        self._outputs[cmd.name] = {}
+        self._outputs = {
+            registration.key: self._outputs.get(registration.key, {})
+            for registration in self._command_registrations
+        }
 
         total_commands = sum(len(cmds) for cmds in preset_commands.values())
         logger.info(
@@ -132,8 +162,8 @@ class SchedulerService:
         logger.info("Scheduler service starting...")
 
         # Start a task for each unique scheduled command
-        for cmd in self._all_commands:
-            await self._start_command_task(cmd)
+        for registration in self._command_registrations:
+            await self._start_command_task(registration)
 
         logger.info(f"Scheduler service started with {len(self._tasks)} tasks")
 
@@ -183,33 +213,82 @@ class SchedulerService:
             Dictionary of command_name -> output for the target.
         """
         result = {}
-        for cmd_name, targets in self._outputs.items():
+        active_preset_id = None
+        if self._get_target_preset_callback:
+            active_preset_id = self._get_target_preset_callback(target_name)
+
+        for registration in self._command_registrations:
+            if (
+                active_preset_id is not None
+                and registration.preset_id != active_preset_id
+            ):
+                continue
+
+            targets = self._outputs.get(registration.key, {})
             if target_name in targets:
-                result[cmd_name] = targets[target_name]
+                result[registration.command.name] = targets[target_name]
         return result
 
     def get_all_outputs(self) -> Dict[str, Dict[str, ScheduledCommandOutput]]:
         """Get all outputs for all commands and targets.
 
         Returns:
-            Nested dictionary: command_name -> target_name -> output
+            Nested dictionary keyed by internal scheduler command key.
         """
         return deepcopy(self._outputs)
 
-    async def _start_command_task(self, cmd: ScheduledCommand) -> None:
-        """Start the periodic execution task for a command."""
-        if cmd.name in self._tasks:
-            return  # Already running
+    def _build_registration_key(
+        self,
+        preset_id: str,
+        cmd: ScheduledCommand,
+        index: int,
+    ) -> str:
+        """Build a stable internal key for a preset-scoped scheduled command."""
+        return f"{preset_id}:{index}:{cmd.name}"
 
-        task = asyncio.create_task(self._run_command_loop(cmd))
-        self._tasks[cmd.name] = task
-        logger.info(
-            f"Started scheduler task for '{cmd.name}' (interval: {cmd.interval_seconds}s)"
+    def _resolve_registration(
+        self,
+        command: Union[ScheduledCommand, _ScheduledCommandRegistration],
+    ) -> _ScheduledCommandRegistration:
+        """Resolve an internal registration for a scheduled command input."""
+        if isinstance(command, _ScheduledCommandRegistration):
+            return command
+
+        for registration in self._command_registrations:
+            if registration.command is command:
+                return registration
+
+        return _ScheduledCommandRegistration(
+            key=command.name,
+            preset_id="basic",
+            command=command,
         )
 
-    async def _run_command_loop(self, cmd: ScheduledCommand) -> None:
+    async def _start_command_task(
+        self,
+        command: Union[ScheduledCommand, _ScheduledCommandRegistration],
+    ) -> None:
+        """Start the periodic execution task for a command."""
+        registration = self._resolve_registration(command)
+        if registration.key in self._tasks:
+            return  # Already running
+
+        task = asyncio.create_task(self._run_command_loop(registration))
+        self._tasks[registration.key] = task
+        logger.info(
+            "Started scheduler task for '%s' in preset '%s' (interval: %ss)",
+            registration.command.name,
+            registration.preset_id,
+            registration.command.interval_seconds,
+        )
+
+    async def _run_command_loop(
+        self,
+        command: Union[ScheduledCommand, _ScheduledCommandRegistration],
+    ) -> None:
         """Run the periodic execution loop for a command."""
-        logger.debug(f"Command loop started for '{cmd.name}'")
+        registration = self._resolve_registration(command)
+        logger.debug("Command loop started for '%s'", registration.command.name)
         retry_delay = SCHEDULER_ERROR_BACKOFF_INITIAL
         run_immediately = True
 
@@ -218,19 +297,25 @@ class SchedulerService:
                 if run_immediately:
                     run_immediately = False
                 else:
-                    await asyncio.sleep(cmd.interval_seconds)
+                    await asyncio.sleep(registration.command.interval_seconds)
 
                 if not self._running:
                     break
 
-                await self._execute_on_targets_with_preset(cmd)
+                await self._execute_on_targets_with_preset(registration)
                 retry_delay = SCHEDULER_ERROR_BACKOFF_INITIAL
 
             except asyncio.CancelledError:
-                logger.debug(f"Command loop cancelled for '{cmd.name}'")
+                logger.debug(
+                    "Command loop cancelled for '%s'", registration.command.name
+                )
                 break
             except Exception as e:
-                logger.error(f"Error in command loop for '{cmd.name}': {e}")
+                logger.error(
+                    "Error in command loop for '%s': %s",
+                    registration.command.name,
+                    e,
+                )
                 await asyncio.sleep(retry_delay)
                 retry_delay = self._get_next_retry_delay(retry_delay)
 
@@ -238,7 +323,10 @@ class SchedulerService:
         """Compute the next retry delay with an exponential backoff cap."""
         return min(current_delay * 2, SCHEDULER_ERROR_BACKOFF_MAX)
 
-    async def _execute_on_targets_with_preset(self, cmd: ScheduledCommand) -> None:
+    async def _execute_on_targets_with_preset(
+        self,
+        command: Union[ScheduledCommand, _ScheduledCommandRegistration],
+    ) -> None:
         """Execute a command on targets that have this command in their preset.
 
         Scheduled commands run on ALL targets except offline ones.
@@ -248,8 +336,10 @@ class SchedulerService:
         commands try to execute on the same target simultaneously.
 
         Args:
-            cmd: The scheduled command to execute.
+            command: The scheduled command or internal registration to execute.
         """
+        registration = self._resolve_registration(command)
+        cmd = registration.command
         if not self._execute_callback or not self._get_targets_callback:
             logger.warning("Callbacks not configured, skipping execution")
             return
@@ -272,7 +362,7 @@ class SchedulerService:
                     continue
 
                 # Check if this command applies to this target's preset
-                if not self._should_execute_on_target(cmd, target.name):
+                if not self._should_execute_on_target(registration, target.name):
                     logger.info(
                         f"Skipping '{cmd.name}' on '{target.name}': command not in target's preset"
                     )
@@ -317,9 +407,9 @@ class SchedulerService:
                             execution_transport=execution_transport,
                         )
 
-                        if cmd.name not in self._outputs:
-                            self._outputs[cmd.name] = {}
-                        self._outputs[cmd.name][target.name] = scheduled_output
+                        if registration.key not in self._outputs:
+                            self._outputs[registration.key] = {}
+                        self._outputs[registration.key][target.name] = scheduled_output
 
                         # Notify listeners (e.g., WebSocket clients)
                         if self._notify_callback:
@@ -348,31 +438,27 @@ class SchedulerService:
             )
 
     def _should_execute_on_target(
-        self, cmd: ScheduledCommand, target_name: str
+        self,
+        command: Union[ScheduledCommand, _ScheduledCommandRegistration],
+        target_name: str,
     ) -> bool:
         """Check if a command should be executed on a target based on its preset.
 
         Args:
-            cmd: The scheduled command.
+            command: The scheduled command or internal registration.
             target_name: The target name.
 
         Returns:
             True if the command should be executed on the target.
         """
+        registration = self._resolve_registration(command)
         # If no preset callback is configured, execute on all targets (legacy mode)
         if not self._get_target_preset_callback:
             return True
 
         # Get the target's preset
         preset_id = self._get_target_preset_callback(target_name)
-
-        # Check if the command exists in this preset's scheduled commands
-        preset_commands = self._preset_commands.get(preset_id, [])
-        for preset_cmd in preset_commands:
-            if preset_cmd.name == cmd.name:
-                return True
-
-        return False
+        return preset_id == registration.preset_id
 
     async def execute_now(self, command_name: str) -> bool:
         """Manually trigger immediate execution of a scheduled command.
@@ -383,11 +469,17 @@ class SchedulerService:
         Returns:
             True if execution was triggered, False if command not found.
         """
-        for cmd in self._all_commands:
-            if cmd.name == command_name:
-                await self._execute_on_targets_with_preset(cmd)
-                return True
-        return False
+        matched = [
+            registration
+            for registration in self._command_registrations
+            if registration.command.name == command_name
+        ]
+        if not matched:
+            return False
+
+        for registration in matched:
+            await self._execute_on_targets_with_preset(registration)
+        return True
 
     # Legacy method - kept for backwards compatibility
     async def _execute_on_all_targets(self, cmd: ScheduledCommand) -> None:

@@ -634,11 +634,42 @@ class LabgridClient:
         """Get all resource entries that belong to a coordinator place."""
         place_data = self._places_cache.get(place_name, {})
         exporters = self._get_place_exporters(place_name, place_data)
+        matched_resources = self._get_place_matched_resources(place_data)
 
         entries: List[Tuple[str, str, Dict[str, Any]]] = []
+        seen_entries: set[Tuple[str, str]] = set()
+        if matched_resources:
+            for exporter_name, resource_key in matched_resources:
+                exporter_resources = self._resources_cache.get(exporter_name, {})
+                if resource_key is None:
+                    for res_type, res_data in exporter_resources.items():
+                        entry_key = (exporter_name, res_type)
+                        if entry_key in seen_entries:
+                            continue
+                        seen_entries.add(entry_key)
+                        entries.append((exporter_name, res_type, res_data))
+                    continue
+
+                res_data = exporter_resources.get(resource_key)
+                if res_data is None:
+                    continue
+
+                entry_key = (exporter_name, resource_key)
+                if entry_key in seen_entries:
+                    continue
+                seen_entries.add(entry_key)
+                entries.append((exporter_name, resource_key, res_data))
+
+            if entries:
+                return entries
+
         for exporter_name in exporters:
             exporter_resources = self._resources_cache.get(exporter_name, {})
             for res_type, res_data in exporter_resources.items():
+                entry_key = (exporter_name, res_type)
+                if entry_key in seen_entries:
+                    continue
+                seen_entries.add(entry_key)
                 entries.append((exporter_name, res_type, res_data))
 
         return entries
@@ -668,10 +699,72 @@ class LabgridClient:
 
         return exporters
 
+    def _get_place_matched_resources(
+        self, place_data: Dict[str, Any]
+    ) -> List[Tuple[str, Optional[str]]]:
+        """Resolve exporter/resource pairs from coordinator match entries."""
+        matches: List[Tuple[str, Optional[str]]] = []
+        for match in place_data.get("matches", []):
+            resolved = self._extract_match_resource(match)
+            if resolved and resolved not in matches:
+                matches.append(resolved)
+        return matches
+
+    def _extract_match_resource(
+        self, match: Any
+    ) -> Optional[Tuple[str, Optional[str]]]:
+        """Best-effort exporter/resource extraction from a labgrid match entry."""
+        if isinstance(match, str):
+            parts = [part for part in match.split("/") if part]
+            if not parts:
+                return None
+            exporter_name = parts[0]
+            resource_key = "/".join(parts[1:]) or None
+            return (exporter_name, resource_key)
+
+        exporter_name = self._extract_match_exporter(match)
+        if not exporter_name:
+            return None
+
+        resource_key = self._extract_match_resource_key(match, exporter_name)
+        return (exporter_name, resource_key)
+
+    def _extract_match_resource_key(
+        self, match: Any, exporter_name: str
+    ) -> Optional[str]:
+        """Extract the resource portion from a non-string match entry."""
+        raw_resource: Optional[str] = None
+
+        if isinstance(match, dict):
+            for key in ("resource", "resource_key", "path", "match"):
+                value = match.get(key)
+                if isinstance(value, str) and value:
+                    raw_resource = value
+                    break
+        elif isinstance(match, (list, tuple)):
+            for value in match:
+                if isinstance(value, str) and value.startswith(f"{exporter_name}/"):
+                    raw_resource = value
+                    break
+        else:
+            for attr in ("resource", "resource_key", "path", "match"):
+                value = getattr(match, attr, None)
+                if isinstance(value, str) and value:
+                    raw_resource = value
+                    break
+
+        if not raw_resource:
+            return None
+
+        if raw_resource.startswith(f"{exporter_name}/"):
+            raw_resource = raw_resource[len(exporter_name) + 1 :]
+
+        return raw_resource.strip("/") or None
+
     def _extract_match_exporter(self, match: Any) -> Optional[str]:
         """Best-effort exporter extraction from a labgrid place match entry."""
         if isinstance(match, str):
-            return match
+            return match.split("/", 1)[0] if match else None
 
         if isinstance(match, dict):
             for key in ("exporter", "name"):

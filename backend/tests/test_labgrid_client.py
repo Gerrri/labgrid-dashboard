@@ -367,6 +367,65 @@ class TestLabgridClientWithMockedSession:
         assert places[0].web_url == "http://example.invalid"
         assert places[0].resources[0].type == "NetworkSerialPort"
 
+    def test_get_place_resource_entries_only_returns_matched_resources(
+        self, connected_client: LabgridClient
+    ):
+        """Only resources matched to the place should be exposed for transport resolution."""
+        connected_client._resources_cache = {
+            "exporter-shared": {
+                "console/NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                },
+                "ssh/NetworkService": {
+                    "cls": "NetworkService",
+                    "params": {"address": "192.168.1.100"},
+                    "acquired": None,
+                    "avail": True,
+                },
+            }
+        }
+        connected_client._places_cache = {
+            "place-serial": {
+                "name": "place-serial",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+                "matches": ["exporter-shared/console/NetworkSerialPort"],
+            },
+            "place-ssh": {
+                "name": "place-ssh",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+                "matches": ["exporter-shared/ssh/NetworkService"],
+            },
+        }
+
+        serial_entries = connected_client.get_place_resource_entries("place-serial")
+        ssh_entries = connected_client.get_place_resource_entries("place-ssh")
+
+        assert serial_entries == [
+            (
+                "exporter-shared",
+                "console/NetworkSerialPort",
+                connected_client._resources_cache["exporter-shared"][
+                    "console/NetworkSerialPort"
+                ],
+            )
+        ]
+        assert ssh_entries == [
+            (
+                "exporter-shared",
+                "ssh/NetworkService",
+                connected_client._resources_cache["exporter-shared"][
+                    "ssh/NetworkService"
+                ],
+            )
+        ]
+
     @pytest.mark.asyncio
     async def test_refresh_cache_keeps_empty_params_resources_online(
         self, connected_client: LabgridClient

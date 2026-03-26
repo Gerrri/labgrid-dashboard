@@ -542,7 +542,9 @@ def main():
         raise SystemExit(255)
 
     rewritten_args = rewrite_password_args(sys.argv[1:])
-    os.execv(sshpass, [sshpass, "-p", password, real_ssh, *rewritten_args])
+    env = os.environ.copy()
+    env["SSHPASS"] = password
+    os.execvpe(sshpass, [sshpass, "-e", real_ssh, *rewritten_args], env)
 
 
 if __name__ == "__main__":

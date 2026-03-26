@@ -104,6 +104,7 @@ class TestSchedulerServiceInitialization:
         # Arrange & Act - created by fixture
         # Assert
         assert scheduler._all_commands == []
+        assert scheduler._command_registrations == []
         assert scheduler._preset_commands == {}
         assert scheduler._outputs == {}
         assert scheduler._tasks == {}
@@ -121,6 +122,7 @@ class TestSchedulerServiceInitialization:
 
         # Assert
         assert scheduler._all_commands == sample_commands
+        assert len(scheduler._command_registrations) == 2
         assert scheduler._preset_commands == {"basic": sample_commands}
         assert "uptime" in scheduler._outputs
         assert "free" in scheduler._outputs
@@ -158,8 +160,10 @@ class TestSchedulerServiceInitialization:
         # Assert
         assert scheduler._preset_commands == preset_commands
         assert len(scheduler._all_commands) == 2  # uptime and sensors (unique)
-        assert "uptime" in scheduler._outputs
-        assert "sensors" in scheduler._outputs
+        assert len(scheduler._command_registrations) == 3
+        assert "basic:0:uptime" in scheduler._outputs
+        assert "advanced:0:uptime" in scheduler._outputs
+        assert "advanced:1:sensors" in scheduler._outputs
 
     def test_set_callbacks(self, scheduler):
         """Test setting callbacks."""
@@ -227,6 +231,22 @@ class TestSchedulerServiceGettingData:
     def test_get_outputs_for_target(self, scheduler):
         """Test getting outputs for a specific target."""
         # Arrange
+        scheduler.set_commands(
+            [
+                ScheduledCommand(
+                    name="uptime",
+                    command="uptime",
+                    interval_seconds=5,
+                    description="",
+                ),
+                ScheduledCommand(
+                    name="free",
+                    command="free -h",
+                    interval_seconds=10,
+                    description="",
+                ),
+            ]
+        )
         scheduler._outputs = {
             "uptime": {
                 "dut-1": ScheduledCommandOutput(
@@ -480,6 +500,65 @@ class TestSchedulerServiceExecution:
         # Assert - should only execute on dut-1 and dut-2 (have basic preset)
         # dut-3 is offline anyway
         assert execute_callback.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_execute_on_targets_supports_duplicate_command_names_across_presets(
+        self, scheduler
+    ):
+        """Different presets may reuse the same display name without collisions."""
+        basic_cmd = ScheduledCommand(
+            name="Version",
+            command="cat /etc/version",
+            interval_seconds=5,
+            description="Basic version",
+        )
+        advanced_cmd = ScheduledCommand(
+            name="Version",
+            command="cat /etc/os-release",
+            interval_seconds=30,
+            description="Advanced version",
+        )
+        scheduler.set_preset_commands(
+            {"basic": [basic_cmd], "advanced": [advanced_cmd]}
+        )
+
+        targets = [
+            Target(name="dut-basic", status="available", acquired_by=None, resources=[]),
+            Target(
+                name="dut-advanced",
+                status="available",
+                acquired_by=None,
+                resources=[],
+            ),
+        ]
+        execute_callback = AsyncMock(
+            side_effect=lambda target_name, command: (f"{target_name}:{command}", 0)
+        )
+        scheduler.set_execute_callback(execute_callback)
+        scheduler.set_get_targets_callback(AsyncMock(return_value=targets))
+        scheduler.set_get_target_preset_callback(
+            lambda name: "basic" if name == "dut-basic" else "advanced"
+        )
+
+        basic_registration, advanced_registration = scheduler._command_registrations
+
+        await scheduler._execute_on_targets_with_preset(basic_registration)
+        await scheduler._execute_on_targets_with_preset(advanced_registration)
+
+        assert execute_callback.await_args_list[0].args == (
+            "dut-basic",
+            "cat /etc/version",
+        )
+        assert execute_callback.await_args_list[1].args == (
+            "dut-advanced",
+            "cat /etc/os-release",
+        )
+        assert scheduler.get_outputs_for_target("dut-basic")["Version"].output == (
+            "dut-basic:cat /etc/version"
+        )
+        assert scheduler.get_outputs_for_target("dut-advanced")["Version"].output == (
+            "dut-advanced:cat /etc/os-release"
+        )
 
     @pytest.mark.asyncio
     async def test_execute_on_targets_handles_execution_error(

@@ -125,7 +125,10 @@ known_hosts:
 
     _write_executable(
         fake_bin / "sshpass",
-        "#!/bin/sh\nprintf '%s\\n' \"$@\"\n",
+        "#!/bin/sh\n"
+        "test -n \"$SSHPASS\" || exit 2\n"
+        "printf 'SSHPASS_SET\\n'\n"
+        "printf '%s\\n' \"$@\"\n",
     )
     _write_executable(
         fake_bin / "ssh-real",
@@ -158,8 +161,11 @@ known_hosts:
     )
 
     output = result.stdout
-    assert "-p" in output
-    assert "s3cr3t" in output
+    output_lines = output.splitlines()
+    assert "SSHPASS_SET" in output
+    assert "-e" in output_lines
+    assert "-p" not in output_lines
+    assert all("s3cr3t" not in line for line in output_lines)
     assert "PasswordAuthentication=no" not in output
     assert "PasswordAuthentication=yes" in output
     assert "exporter-password" in output
