@@ -139,19 +139,6 @@ export function CommandPanel({
 
   return (
     <div className="command-panel">
-      <div className="command-panel-header">
-        <h4>Commands for {targetName}</h4>
-        {outputs.length > 0 && (
-          <button
-            className="btn-clear"
-            onClick={handleClearOutput}
-            title="Clear output"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
       {error && (
         <div className="command-error">
           <span className="error-icon">⚠</span>
@@ -178,7 +165,7 @@ export function CommandPanel({
       </div>
 
       <div className="command-output-section">
-        <OutputViewer outputs={outputs} />
+        <OutputViewer outputs={outputs} onClear={handleClearOutput} />
       </div>
 
       {onSettingsClick && (

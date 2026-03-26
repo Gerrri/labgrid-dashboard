@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { WSMessage, Target, CommandOutput } from '../types';
+import type {
+  WSMessage,
+  Target,
+  CommandOutput,
+  ScheduledCommandOutput,
+} from '../types';
 import { buildWsUrl } from '../utils/urlBuilder';
 
 const RECONNECT_INTERVAL = 5000;
@@ -8,7 +13,11 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 interface UseWebSocketOptions {
   onTargetUpdate?: (target: Target) => void;
   onCommandOutput?: (targetName: string, output: CommandOutput) => void;
-  onScheduledOutput?: (targetName: string, commandName: string, output: CommandOutput) => void;
+  onScheduledOutput?: (
+    targetName: string,
+    commandName: string,
+    output: ScheduledCommandOutput,
+  ) => void;
   onTargetsList?: (targets: Target[]) => void;
   onConnectionChange?: (connected: boolean) => void;
 }
@@ -28,6 +37,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const initialConnectTimeoutRef = useRef<number | null>(null);
   const callbacksRef = useRef<UseWebSocketOptions>(options);
   // Flag to track intentional closes (cleanup, unmount) vs unexpected disconnects
   const intentionalCloseRef = useRef(false);
@@ -40,6 +50,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
     if (reconnectTimeoutRef.current !== null) {
       window.clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearInitialConnectTimeout = useCallback(() => {
+    if (initialConnectTimeoutRef.current !== null) {
+      window.clearTimeout(initialConnectTimeoutRef.current);
+      initialConnectTimeoutRef.current = null;
     }
   }, []);
 
@@ -86,7 +103,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
               const data = message.data as {
                 target: string;
                 command_name: string;
-                output: CommandOutput;
+                output: ScheduledCommandOutput;
               };
               callbacksRef.current.onScheduledOutput?.(
                 data.target,
@@ -167,9 +184,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
   );
 
   useEffect(() => {
-    connect();
+    initialConnectTimeoutRef.current = window.setTimeout(() => {
+      initialConnectTimeoutRef.current = null;
+      connect();
+    }, 0);
 
     return () => {
+      clearInitialConnectTimeout();
       clearReconnectTimeout();
       // Mark as intentional close to prevent error logging and reconnection attempts
       intentionalCloseRef.current = true;
@@ -178,7 +199,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRes
         wsRef.current = null;
       }
     };
-  }, [connect, clearReconnectTimeout]);
+  }, [connect, clearInitialConnectTimeout, clearReconnectTimeout]);
 
   return {
     connected,

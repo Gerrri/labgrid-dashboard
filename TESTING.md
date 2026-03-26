@@ -159,6 +159,7 @@ docker run -d \
   --name labgrid-test \
   -p 8080:80 \
   -e COORDINATOR_URL=ws://your-coordinator:20408/ws \
+  -v ./exporter-ssh:/app/exporter-ssh:ro \
   labgrid-dashboard:test
 
 # Test endpoints
@@ -166,6 +167,26 @@ curl http://localhost:8080/health              # Nginx
 curl http://localhost:8080/api/health          # Backend (requires coordinator)
 curl http://localhost:8080/env-config.js       # Runtime config
 ```
+
+## Exporter SSH Bundle Validation
+
+Use the staging profile to verify both supported exporter auth modes:
+
+```bash
+docker compose --profile staging up -d --build
+```
+
+Expected checks:
+- `exporter-1` executes commands over serial
+- `exporter-2` tries serial first and falls back to SSH
+- `exporter-3` executes commands over SSH using a DUT private key
+- `exporter-4` executes commands over SSH using DUT username/password
+- all four exporters start as `available` with no default acquisition after the coordinator cache settles
+- `~/.ssh/config` includes the managed exporter SSH snippet
+- `~/.ssh/labgrid-dashboard/config`, `~/.ssh/labgrid-dashboard/known_hosts`, and generated key files are present in the runtime container
+- serial command execution still reaches exporters over SSH before falling back to DUT SSH
+- the UI updates `Command transport:` to the transport actually used for the latest execution
+- after a reload, `/api/targets` still provides `last_command_outputs[*].execution_transport` for the newest manual command result
 
 ## Regression Testing
 
@@ -176,6 +197,9 @@ After all fixes, verify these still work:
 - ✅ WebSocket real-time updates
 - ✅ Scheduled command columns
 - ✅ Target settings dialog
+- ✅ Exporter SSH bundle loading
+- ✅ Serial command execution through exporter SSH for both private key and username/password auth
+- ✅ Actual transport display persists via cached manual command outputs
 
 ## Automated Test Summary
 
@@ -184,6 +208,7 @@ After all fixes, verify these still work:
 | Frontend Build | ✅ PASS | TypeScript compilation successful |
 | Backend Tests | ✅ PASS | 132/133 tests passed |
 | Production Image | ✅ PASS | Docker build & runtime tests passed |
+| Exporter SSH Bundles | ✅ PASS | Staging exercises private key and username/password exporter bundles |
 | Manual Testing | ⏳ TODO | Follow guide above |
 
 ## Known Issues (Pre-existing)

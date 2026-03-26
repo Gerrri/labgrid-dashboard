@@ -15,6 +15,9 @@ from httpx import ASGITransport, AsyncClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.api.routes.health import set_labgrid_client as set_health_labgrid_client
+from app.api.routes.targets import (
+    set_command_execution_service as set_targets_command_execution_service,
+)
 from app.api.routes.targets import set_command_service as set_targets_command_service
 from app.api.routes.targets import set_labgrid_client as set_targets_labgrid_client
 from app.api.routes.targets import set_preset_service as set_targets_preset_service
@@ -22,7 +25,14 @@ from app.api.routes.targets import (
     set_scheduler_service as set_targets_scheduler_service,
 )
 from app.main import app
-from app.models.target import Command, Preset, PresetDetail, Resource, Target
+from app.models.target import (
+    Command,
+    CommandExecutionConfig,
+    Preset,
+    PresetDetail,
+    Resource,
+    Target,
+)
 from app.services.command_service import CommandService
 from app.services.labgrid_client import LabgridClient
 from app.services.preset_service import PresetService
@@ -117,6 +127,7 @@ def mock_command_service(
     service.get_presets.return_value = mock_presets
     service.get_default_preset_id.return_value = "basic"
     service.get_commands_for_preset.return_value = mock_commands
+    service.get_execution_config_for_preset.return_value = CommandExecutionConfig()
     service.get_command_by_name_for_preset.side_effect = lambda preset_id, name: next(
         (c for c in mock_commands if c.name == name), None
     )
@@ -169,6 +180,7 @@ async def client(
     set_health_labgrid_client(mock_labgrid_client)
     set_targets_labgrid_client(mock_labgrid_client)
     set_targets_command_service(mock_command_service)
+    set_targets_command_execution_service(None)
     set_targets_preset_service(mock_preset_service)
     set_targets_scheduler_service(mock_scheduler_service)
 
@@ -180,6 +192,7 @@ async def client(
     set_health_labgrid_client(None)  # type: ignore
     set_targets_labgrid_client(None)  # type: ignore
     set_targets_command_service(None)  # type: ignore
+    set_targets_command_execution_service(None)
     set_targets_preset_service(None)  # type: ignore
     set_targets_scheduler_service(None)  # type: ignore
 

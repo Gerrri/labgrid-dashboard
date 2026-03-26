@@ -1,0 +1,11 @@
+alias: exporter-1
+host: exporter-1
+port: 22
+
+ssh:
+  user: root
+  auth:
+    method: private_key
+
+known_hosts:
+  - "exporter-1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDs8rF9Bw8Bvpzqd2zWshlVZaqhV6oB8oLEiQnWYDlWj"

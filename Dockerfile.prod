@@ -71,6 +71,7 @@ ENV PYTHONUNBUFFERED=1
 ENV UVICORN_WORKERS=1
 ENV UVICORN_LOG_LEVEL=info
 ENV APP_VERSION=${APP_VERSION}
+ENV IMAGE_APP_VERSION=${APP_VERSION}
 
 # Copy frontend build artifacts to nginx web root
 COPY --from=frontend-builder /app/frontend/dist /var/www/html

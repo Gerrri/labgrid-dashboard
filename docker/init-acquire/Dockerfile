@@ -1,8 +1,8 @@
-# Init-Acquire Container
-# Automatically acquires exporter-1 place for staging demonstration
+# Init-Places Container
+# Creates exporter places for staging demonstration.
 #
-# This container runs once at startup to create and acquire a place,
-# demonstrating the "acquired" status in the dashboard.
+# This container runs once at startup to create place mappings and can
+# optionally acquire a place if ACQUIRE_PLACE is set.
 
 FROM python:3.11-slim
 
@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir git+https://github.com/labgrid-project/labgrid.gi
 # Show available labgrid-client commands for debugging
 RUN labgrid-client --help || true
 
-# Copy the acquire script
+# Copy the place setup script
 COPY acquire-exporter.sh /scripts/acquire-exporter.sh
 RUN chmod +x /scripts/acquire-exporter.sh
 
@@ -26,10 +26,10 @@ WORKDIR /scripts
 
 # Default environment variables
 ENV COORDINATOR_HOST=coordinator:20408
-ENV PLACE_NAME=exporter-1
+ENV ACQUIRE_PLACE=none
 ENV EXPORTER_NAME=exporter-1
 ENV USER_NAME=staging-user
 ENV WAIT_TIME=10
 
-# Run the acquire script
+# Run the place setup script
 CMD ["/scripts/acquire-exporter.sh"]

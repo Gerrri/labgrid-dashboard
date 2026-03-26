@@ -14,6 +14,7 @@ export interface CommandOutput {
   output: string;
   timestamp: string;
   exit_code: number;
+  execution_transport?: ExecutionTransport | null;
 }
 
 /**
@@ -24,6 +25,7 @@ export interface ScheduledCommandOutput {
   output: string;
   timestamp: string;
   exit_code: number;
+  execution_transport?: ExecutionTransport | null;
 }
 
 /**
@@ -42,6 +44,11 @@ export interface ScheduledCommand {
 export type TargetStatus = "available" | "acquired" | "offline";
 
 /**
+ * Transport used for command execution on a target
+ */
+export type ExecutionTransport = "serial" | "ssh";
+
+/**
  * Target/DUT representation
  */
 export interface Target {
@@ -53,6 +60,9 @@ export interface Target {
   resources: Resource[];
   last_command_outputs: CommandOutput[];
   scheduled_outputs: Record<string, ScheduledCommandOutput>;
+  command_capable?: boolean;
+  command_capability_error?: string | null;
+  command_transport?: ExecutionTransport | null;
 }
 
 /**

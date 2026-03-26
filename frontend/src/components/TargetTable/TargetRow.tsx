@@ -1,6 +1,10 @@
 import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import type { Target, CommandOutput, ScheduledCommand } from "../../types";
+import type {
+  Target,
+  CommandOutput,
+  ScheduledCommand,
+} from "../../types";
 import { StatusBadge } from "./StatusBadge";
 import { CommandPanel } from "../CommandPanel";
 import { TargetSettings } from "../TargetSettings";
@@ -270,7 +274,13 @@ export function TargetRow({
     );
   };
 
-  const canExecuteCommands = target.status !== "offline";
+  const canExecuteCommands =
+    target.command_capable ?? target.status !== "offline";
+  const commandCapabilityError =
+    target.command_capability_error ??
+    (target.status === "offline"
+      ? "Commands unavailable - target is offline"
+      : "Commands unavailable for this target");
 
   return (
     <>
@@ -326,10 +336,11 @@ export function TargetRow({
                       onSettingsClick={handleSettingsClick}
                     />
                   ) : (
-                    <div className="commands-offline">
-                      <p className="text-muted">
-                        Commands unavailable - target is offline
+                    <div className="commands-unavailable" role="alert">
+                      <p className="commands-unavailable-title">
+                        Commands unavailable
                       </p>
+                      <p className="text-muted">{commandCapabilityError}</p>
                     </div>
                   )}
                 </div>

@@ -13,17 +13,26 @@ from typing import AsyncGenerator
 from app.api import api_router
 from app.api.routes.health import set_labgrid_client as set_health_labgrid_client
 from app.api.routes.targets import set_command_service as set_targets_command_service
+from app.api.routes.targets import (
+    set_command_execution_service as set_targets_command_execution_service,
+)
 from app.api.routes.targets import set_labgrid_client as set_targets_labgrid_client
 from app.api.routes.targets import set_preset_service as set_targets_preset_service
 from app.api.routes.targets import (
     set_scheduler_service as set_targets_scheduler_service,
 )
 from app.api.websocket import broadcast_target_update, broadcast_targets_list
+from app.api.websocket import (
+    set_command_execution_service as set_ws_command_execution_service,
+)
 from app.api.websocket import set_command_service as set_ws_command_service
 from app.api.websocket import set_labgrid_client as set_ws_labgrid_client
+from app.api.websocket import set_preset_service as set_ws_preset_service
 from app.api.websocket import set_scheduler_service as set_ws_scheduler_service
 from app.config import get_settings
 from app.services.command_service import CommandService
+from app.services.command_execution_service import CommandExecutionService
+from app.services.exporter_ssh_runtime import ExporterSSHRuntimeService
 from app.services.labgrid_client import LabgridClient
 from app.services.labgrid_client import LabgridConnectionError
 from app.services.preset_service import PresetService
@@ -46,6 +55,7 @@ labgrid_client: LabgridClient | None = None
 command_service: CommandService | None = None
 scheduler_service: SchedulerService | None = None
 preset_service: PresetService | None = None
+command_execution_service: CommandExecutionService | None = None
 
 
 async def wait_for_targets_ready(
@@ -145,11 +155,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     - Initializing preset service
     - Starting scheduled command execution
     """
-    global labgrid_client, command_service, scheduler_service, preset_service
+    global labgrid_client
+    global command_service
+    global scheduler_service
+    global preset_service
+    global command_execution_service
 
     settings = get_settings()
     logger.info("Starting Labgrid Dashboard Backend...")
     reconnect_task: asyncio.Task[None] | None = None
+
+    exporter_ssh_runtime = ExporterSSHRuntimeService(
+        bundles_dir=settings.exporter_ssh_bundles_dir,
+        managed_dir=settings.exporter_ssh_managed_dir or None,
+    )
+    try:
+        exporter_ssh_runtime.setup()
+    except Exception:
+        logger.exception("Failed to prepare exporter SSH runtime assets")
 
     # Initialize command service
     command_service = CommandService(commands_file=settings.commands_file)
@@ -187,6 +210,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         await labgrid_client.disconnect()
 
+    command_execution_service = CommandExecutionService(
+        labgrid_client=labgrid_client,
+        command_service=command_service,
+        preset_service=preset_service,
+    )
+
     # Initialize scheduler service with preset support
     scheduler_service = SchedulerService()
 
@@ -198,7 +227,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             preset_commands[preset.id] = preset_detail.scheduled_commands
 
     scheduler_service.set_preset_commands(preset_commands)
-    scheduler_service.set_execute_callback(labgrid_client.execute_command)
+    scheduler_service.set_execute_callback(command_execution_service.execute_command)
     scheduler_service.set_get_targets_callback(labgrid_client.get_schedulable_places)
     scheduler_service.set_get_target_preset_callback(preset_service.get_target_preset)
 
@@ -206,10 +235,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     set_health_labgrid_client(labgrid_client)
     set_targets_labgrid_client(labgrid_client)
     set_targets_command_service(command_service)
+    set_targets_command_execution_service(command_execution_service)
     set_targets_scheduler_service(scheduler_service)
     set_targets_preset_service(preset_service)
     set_ws_labgrid_client(labgrid_client)
     set_ws_command_service(command_service)
+    set_ws_command_execution_service(command_execution_service)
+    set_ws_preset_service(preset_service)
     set_ws_scheduler_service(scheduler_service)
 
     async def handle_target_update(target_name: str, target_data: dict) -> None:
@@ -267,7 +299,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Labgrid Dashboard API",
         description="REST API for Labgrid Dashboard - Monitor and interact with DUTs",
-        version="0.1.3",
+        version="0.1.7",
         lifespan=lifespan,
     )
 

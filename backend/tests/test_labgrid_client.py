@@ -123,6 +123,20 @@ class TestLabgridClient:
 class TestLabgridClientWithMockedSession:
     """Test cases with mocked labgrid ClientSession."""
 
+    class _WildcardMatch:
+        """Simple stand-in for labgrid ResourceMatch repr-based wildcard objects."""
+
+        exporter = "*"
+        name = None
+
+        def __init__(self, pattern: str):
+            self._pattern = pattern
+
+        def __str__(self) -> str:
+            return self._pattern
+
+        __repr__ = __str__
+
     def _create_mock_resource_entry(self, cls_name, params, acquired, avail):
         """Create a mock ResourceEntry object that mimics labgrid's structure."""
         mock_entry = MagicMock()
@@ -366,6 +380,218 @@ class TestLabgridClientWithMockedSession:
         assert places[0].name == "place-1"
         assert places[0].web_url == "http://example.invalid"
         assert places[0].resources[0].type == "NetworkSerialPort"
+
+    def test_get_place_resource_entries_only_returns_matched_resources(
+        self, connected_client: LabgridClient
+    ):
+        """Only resources matched to the place should be exposed for transport resolution."""
+        connected_client._resources_cache = {
+            "exporter-shared": {
+                "console/NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                },
+                "ssh/NetworkService": {
+                    "cls": "NetworkService",
+                    "params": {"address": "192.168.1.100"},
+                    "acquired": None,
+                    "avail": True,
+                },
+            }
+        }
+        connected_client._places_cache = {
+            "place-serial": {
+                "name": "place-serial",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+                "matches": ["exporter-shared/console/NetworkSerialPort"],
+            },
+            "place-ssh": {
+                "name": "place-ssh",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+                "matches": ["exporter-shared/ssh/NetworkService"],
+            },
+        }
+
+        serial_entries = connected_client.get_place_resource_entries("place-serial")
+        ssh_entries = connected_client.get_place_resource_entries("place-ssh")
+
+        assert serial_entries == [
+            (
+                "exporter-shared",
+                "console/NetworkSerialPort",
+                connected_client._resources_cache["exporter-shared"][
+                    "console/NetworkSerialPort"
+                ],
+            )
+        ]
+        assert ssh_entries == [
+            (
+                "exporter-shared",
+                "ssh/NetworkService",
+                connected_client._resources_cache["exporter-shared"][
+                    "ssh/NetworkService"
+                ],
+            )
+        ]
+
+    def test_get_place_resource_entries_resolve_wildcard_exporter_match(
+        self, connected_client: LabgridClient
+    ):
+        """Wildcard matches should still resolve the real exporter name."""
+        connected_client._resources_cache = {
+            "exporter-shared": {
+                "console/NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                },
+                "ssh/NetworkService": {
+                    "cls": "NetworkService",
+                    "params": {"address": "192.168.1.100"},
+                    "acquired": None,
+                    "avail": True,
+                },
+            }
+        }
+        connected_client._places_cache = {
+            "custom-place": {
+                "name": "custom-place",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+                "matches": ["*/exporter-shared/*"],
+            }
+        }
+
+        entries = connected_client.get_place_resource_entries("custom-place")
+
+        assert entries == [
+            (
+                "exporter-shared",
+                "console/NetworkSerialPort",
+                connected_client._resources_cache["exporter-shared"][
+                    "console/NetworkSerialPort"
+                ],
+            ),
+            (
+                "exporter-shared",
+                "ssh/NetworkService",
+                connected_client._resources_cache["exporter-shared"][
+                    "ssh/NetworkService"
+                ],
+            ),
+        ]
+
+    def test_get_place_resource_entries_resolve_specific_resource_with_wildcard_prefix(
+        self, connected_client: LabgridClient
+    ):
+        """Wildcard-prefixed specific matches should still scope to the exact resource."""
+        connected_client._resources_cache = {
+            "exporter-shared": {
+                "console/NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                },
+                "ssh/NetworkService": {
+                    "cls": "NetworkService",
+                    "params": {"address": "192.168.1.100"},
+                    "acquired": None,
+                    "avail": True,
+                },
+            }
+        }
+        connected_client._places_cache = {
+            "custom-place": {
+                "name": "custom-place",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+                "matches": ["*/exporter-shared/console/NetworkSerialPort"],
+            }
+        }
+
+        entries = connected_client.get_place_resource_entries("custom-place")
+
+        assert entries == [
+            (
+                "exporter-shared",
+                "console/NetworkSerialPort",
+                connected_client._resources_cache["exporter-shared"][
+                    "console/NetworkSerialPort"
+                ],
+            )
+        ]
+
+    def test_parse_string_match_resolves_staging_wildcard_exporter(
+        self, connected_client: LabgridClient
+    ):
+        """The staging match syntax */exporter/* should resolve exporter and wildcard resource."""
+        connected_client._resources_cache = {"exporter-1": {}}
+
+        exporter_name, resource_key = connected_client._parse_string_match(
+            "*/exporter-1/*"
+        )
+
+        assert exporter_name == "exporter-1"
+        assert resource_key is None
+
+    def test_get_place_resource_entries_resolve_wildcard_match_objects(
+        self, connected_client: LabgridClient
+    ):
+        """ResourceMatch-like objects should fall back to their string representation."""
+        connected_client._resources_cache = {
+            "exporter-shared": {
+                "console/NetworkSerialPort": {
+                    "cls": "NetworkSerialPort",
+                    "params": {"host": "192.168.1.100", "port": 5000},
+                    "acquired": None,
+                    "avail": True,
+                },
+                "ssh/NetworkService": {
+                    "cls": "NetworkService",
+                    "params": {"address": "192.168.1.100"},
+                    "acquired": None,
+                    "avail": True,
+                },
+            }
+        }
+        connected_client._places_cache = {
+            "custom-place": {
+                "name": "custom-place",
+                "acquired": None,
+                "comment": "",
+                "tags": {},
+                "matches": [self._WildcardMatch("*/exporter-shared/*")],
+            }
+        }
+
+        entries = connected_client.get_place_resource_entries("custom-place")
+
+        assert entries == [
+            (
+                "exporter-shared",
+                "console/NetworkSerialPort",
+                connected_client._resources_cache["exporter-shared"][
+                    "console/NetworkSerialPort"
+                ],
+            ),
+            (
+                "exporter-shared",
+                "ssh/NetworkService",
+                connected_client._resources_cache["exporter-shared"][
+                    "ssh/NetworkService"
+                ],
+            ),
+        ]
 
     @pytest.mark.asyncio
     async def test_refresh_cache_keeps_empty_params_resources_online(

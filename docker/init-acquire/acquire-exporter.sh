@@ -1,19 +1,19 @@
 #!/bin/bash
-# Auto-acquire exporter-1 for staging demonstration
-# This script creates places for ALL exporters, matches them to exporter resources,
-# and acquires only exporter-1 for the staging user.
+# Create places for staging exporters and optionally acquire one place.
+# This script creates places for all exporters, matches them to exporter resources,
+# and can optionally acquire one place for demonstration.
 # Uses labgrid-client CLI from latest labgrid version
 
 COORDINATOR_HOST="${COORDINATOR_HOST:-coordinator:20408}"
-ACQUIRE_PLACE="${ACQUIRE_PLACE:-exporter-1}"
+ACQUIRE_PLACE="${ACQUIRE_PLACE:-none}"
 USER_NAME="${USER_NAME:-staging-user}"
 WAIT_TIME="${WAIT_TIME:-10}"
 
 # Define all exporters to create places for
-EXPORTERS=("exporter-1" "exporter-2" "exporter-3")
+EXPORTERS=("exporter-1" "exporter-2" "exporter-3" "exporter-4")
 
 echo "=========================================="
-echo "Labgrid Auto-Acquire Script"
+echo "Labgrid Place Setup Script"
 echo "=========================================="
 echo "Coordinator: ${COORDINATOR_HOST}"
 echo "Exporters: ${EXPORTERS[*]}"
@@ -86,6 +86,26 @@ for exporter in "${EXPORTERS[@]}"; do
         echo "  Could not show place details for '${place_name}'"
     }
 done
+
+echo ""
+echo "Step 8: Releasing all places to ensure a clean staging baseline..."
+for exporter in "${EXPORTERS[@]}"; do
+    echo "  Releasing place '${exporter}' if needed..."
+    labgrid-client -p "${exporter}" release 2>&1 || true
+done
+
+echo ""
+if [ -z "${ACQUIRE_PLACE}" ] || [ "${ACQUIRE_PLACE}" = "none" ]; then
+    echo ""
+    echo "=========================================="
+    echo "SUCCESS: Setup complete!"
+    echo "=========================================="
+    echo "Places created: ${EXPORTERS[*]}"
+    echo "No place acquired by default."
+    echo "=========================================="
+    sleep 2
+    exit 0
+fi
 
 echo ""
 echo "Step 8: Acquiring place '${ACQUIRE_PLACE}'..."

@@ -4,10 +4,14 @@
 FROM python:3.11-slim
 
 # Install labgrid and dependencies
-RUN pip install --no-cache-dir labgrid
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        openssh-server \
+    && rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir labgrid
 
 # Create config directory
-RUN mkdir -p /config
+RUN mkdir -p /config /run/sshd /root/.ssh
 
 # Copy configuration template
 COPY exporter-config.yaml /config/exporter-template.yaml
@@ -21,6 +25,11 @@ ENV DUT_HOST=dut
 ENV DUT_PORT=5000
 ENV EXPORTER_NAME=exporter
 ENV COORDINATOR_URL=ws://coordinator:20408/ws
+ENV EXPORTER_ISOLATED=0
+ENV EXPORTER_HOSTNAME=
+ENV EXPORTER_SSH_AUTH_MODE=none
+ENV EXPORTER_SSH_PASSWORD=
+ENV EXPORTER_SSH_SERVER_DIR=/ssh-server
 
 # Working directory for exporter
 WORKDIR /config

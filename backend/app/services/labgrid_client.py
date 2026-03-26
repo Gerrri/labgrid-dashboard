@@ -10,6 +10,7 @@ Note: Labgrid switched from WAMP to gRPC in version 24.0.
 
 import asyncio
 import contextlib
+import fnmatch
 import logging
 import os
 import socket
@@ -97,6 +98,7 @@ class LabgridClient:
 
                 # Get the current event loop
                 loop = asyncio.get_event_loop()
+                os.environ["LG_USERNAME"] = LABGRID_DASHBOARD_USER
 
                 # Create ClientSession with address and loop
                 # Using keyword arguments for attrs-generated constructor
@@ -232,7 +234,15 @@ class LabgridClient:
                         if exporter_name not in current_resources:
                             current_resources[exporter_name] = {}
 
-                        current_resources[exporter_name][res_type] = {
+                        resource_key = (
+                            res_type
+                            if group_name == "default"
+                            else f"{group_name}/{res_type}"
+                        )
+
+                        current_resources[exporter_name][resource_key] = {
+                            "name": group_name,
+                            "resource_type": res_type,
                             "cls": cls_name,
                             "params": params,
                             "acquired": acquired,
@@ -625,14 +635,45 @@ class LabgridClient:
         """Get all resource entries that belong to a coordinator place."""
         place_data = self._places_cache.get(place_name, {})
         exporters = self._get_place_exporters(place_name, place_data)
+        matched_resources = self._get_place_matched_resources(place_data)
 
         entries: List[Tuple[str, str, Dict[str, Any]]] = []
+        seen_entries: set[Tuple[str, str]] = set()
+        if matched_resources:
+            for exporter_name, resource_key in matched_resources:
+                exporter_resources = self._resources_cache.get(exporter_name, {})
+                for resolved_key in self._resolve_matched_resource_keys(
+                    exporter_resources,
+                    resource_key,
+                ):
+                    res_data = exporter_resources.get(resolved_key)
+                    if res_data is None:
+                        continue
+
+                    entry_key = (exporter_name, resolved_key)
+                    if entry_key in seen_entries:
+                        continue
+                    seen_entries.add(entry_key)
+                    entries.append((exporter_name, resolved_key, res_data))
+
+            return entries
+
         for exporter_name in exporters:
             exporter_resources = self._resources_cache.get(exporter_name, {})
             for res_type, res_data in exporter_resources.items():
+                entry_key = (exporter_name, res_type)
+                if entry_key in seen_entries:
+                    continue
+                seen_entries.add(entry_key)
                 entries.append((exporter_name, res_type, res_data))
 
         return entries
+
+    def get_place_resource_entries(
+        self, place_name: str
+    ) -> List[Tuple[str, str, Dict[str, Any]]]:
+        """Public wrapper for cached place resource entries."""
+        return self._get_place_resource_entries(place_name)
 
     def _get_place_exporters(
         self, place_name: str, place_data: Dict[str, Any]
@@ -653,30 +694,190 @@ class LabgridClient:
 
         return exporters
 
+    def _get_place_matched_resources(
+        self, place_data: Dict[str, Any]
+    ) -> List[Tuple[str, Optional[str]]]:
+        """Resolve exporter/resource pairs from coordinator match entries."""
+        matches: List[Tuple[str, Optional[str]]] = []
+        for match in place_data.get("matches", []):
+            resolved = self._extract_match_resource(match)
+            if resolved and resolved not in matches:
+                matches.append(resolved)
+        return matches
+
+    def _extract_match_resource(
+        self, match: Any
+    ) -> Optional[Tuple[str, Optional[str]]]:
+        """Best-effort exporter/resource extraction from a labgrid match entry."""
+        if isinstance(match, str):
+            exporter_name, resource_key = self._parse_string_match(match)
+            if not exporter_name:
+                return None
+            return (exporter_name, resource_key)
+
+        exporter_name = self._extract_match_exporter(match)
+        if not exporter_name:
+            return self._parse_match_fallback(match)
+
+        resource_key = self._extract_match_resource_key(match, exporter_name)
+        if resource_key is None:
+            fallback_exporter, fallback_resource_key = self._parse_match_fallback(match)
+            if fallback_exporter == exporter_name:
+                resource_key = fallback_resource_key
+        return (exporter_name, resource_key)
+
+    def _extract_match_resource_key(
+        self, match: Any, exporter_name: str
+    ) -> Optional[str]:
+        """Extract the resource portion from a non-string match entry."""
+        raw_resource: Optional[str] = None
+
+        if isinstance(match, dict):
+            for key in ("resource", "resource_key", "path", "match"):
+                value = match.get(key)
+                if isinstance(value, str) and value:
+                    raw_resource = value
+                    break
+        elif isinstance(match, (list, tuple)):
+            for value in match:
+                if isinstance(value, str) and value.startswith(f"{exporter_name}/"):
+                    raw_resource = value
+                    break
+        else:
+            for attr in ("resource", "resource_key", "path", "match"):
+                value = getattr(match, attr, None)
+                if isinstance(value, str) and value:
+                    raw_resource = value
+                    break
+
+        if not raw_resource:
+            fallback_exporter, fallback_resource_key = self._parse_match_fallback(match)
+            if fallback_exporter == exporter_name:
+                return fallback_resource_key
+            return None
+
+        if raw_resource.startswith(f"{exporter_name}/"):
+            raw_resource = raw_resource[len(exporter_name) + 1 :]
+
+        return raw_resource.strip("/") or None
+
     def _extract_match_exporter(self, match: Any) -> Optional[str]:
         """Best-effort exporter extraction from a labgrid place match entry."""
         if isinstance(match, str):
-            return match
+            exporter_name, _ = self._parse_string_match(match)
+            return exporter_name
 
         if isinstance(match, dict):
             for key in ("exporter", "name"):
                 value = match.get(key)
-                if isinstance(value, str):
+                if isinstance(value, str) and value and value != "*":
                     return value
-            return None
+            fallback_exporter, _ = self._parse_match_fallback(match)
+            return fallback_exporter
 
         if isinstance(match, (list, tuple)):
             for value in match:
                 if isinstance(value, str) and value in self._resources_cache:
                     return value
-            return None
+            fallback_exporter, _ = self._parse_match_fallback(match)
+            return fallback_exporter
 
         for attr in ("exporter", "name"):
             value = getattr(match, attr, None)
-            if isinstance(value, str):
+            if isinstance(value, str) and value and value != "*":
                 return value
 
-        return None
+        fallback_exporter, _ = self._parse_match_fallback(match)
+        return fallback_exporter
+
+    def _parse_string_match(self, match: str) -> Tuple[Optional[str], Optional[str]]:
+        """Parse string-based labgrid matches, including wildcard variants."""
+        parts = [part for part in match.split("/") if part]
+        if not parts:
+            return (None, None)
+
+        exporter_index = self._find_exporter_index(parts)
+        if exporter_index is None:
+            return (None, None)
+
+        exporter_name = parts[exporter_index]
+        resource_key = "/".join(parts[exporter_index + 1 :]).strip("/") or None
+        return (exporter_name, self._normalize_match_resource_pattern(resource_key))
+
+    def _parse_match_fallback(
+        self, match: Any
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Fallback parser for match objects whose useful data only exists in their repr()."""
+        for candidate in (str(match), repr(match)):
+            if not isinstance(candidate, str) or "/" not in candidate:
+                continue
+
+            exporter_name, resource_key = self._parse_string_match(candidate)
+            if exporter_name:
+                return (exporter_name, resource_key)
+
+        return (None, None)
+
+    def _find_exporter_index(self, parts: List[str]) -> Optional[int]:
+        """Locate the exporter segment inside a match path."""
+        for index, part in enumerate(parts):
+            if part in self._resources_cache:
+                return index
+
+        non_wildcard_indices = [
+            index for index, part in enumerate(parts) if part and part != "*"
+        ]
+        if not non_wildcard_indices:
+            return None
+
+        if parts[0] == "*":
+            return non_wildcard_indices[0]
+
+        return 0
+
+    def _normalize_match_resource_pattern(
+        self, resource_key: Optional[str]
+    ) -> Optional[str]:
+        """Normalize resource patterns from coordinator match strings."""
+        if not resource_key:
+            return None
+
+        normalized = resource_key.strip("/")
+        if normalized in {"", "*"}:
+            return None
+
+        if normalized.startswith("default/"):
+            normalized = normalized[len("default/") :]
+
+        return normalized or None
+
+    def _resolve_matched_resource_keys(
+        self,
+        exporter_resources: Dict[str, Any],
+        resource_key: Optional[str],
+    ) -> List[str]:
+        """Resolve exact or wildcard resource patterns against cached resources."""
+        if resource_key is None:
+            return list(exporter_resources.keys())
+
+        resolved_keys: List[str] = []
+        for candidate_key in exporter_resources:
+            candidate_aliases = {candidate_key}
+            if "/" not in candidate_key:
+                candidate_aliases.add(f"default/{candidate_key}")
+
+            if "*" in resource_key:
+                if any(
+                    fnmatch.fnmatch(candidate_alias, resource_key)
+                    for candidate_alias in candidate_aliases
+                ):
+                    resolved_keys.append(candidate_key)
+                continue
+
+            if resource_key in candidate_aliases:
+                resolved_keys.append(candidate_key)
+
+        return resolved_keys
 
     async def acquire_target(self, place_name: str) -> bool:
         """Acquire a target for command execution.

@@ -14,20 +14,6 @@
   min-height: 150px;
 }
 
-.command-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.command-panel-header h4 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
 .btn-clear {
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
@@ -41,6 +27,16 @@
 .btn-clear:hover {
   background-color: var(--color-hover);
   color: var(--color-text);
+}
+
+.btn-clear-terminal {
+  border-color: #4b5563;
+  color: #d1d5db;
+}
+
+.btn-clear-terminal:hover {
+  background-color: #374151;
+  color: #f9fafb;
 }
 
 /* Loading Spinner */
@@ -243,6 +239,16 @@
 
 .timestamp {
   color: #9ca3af;
+}
+
+.transport-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background-color: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  font-weight: 500;
 }
 
 .output-content {

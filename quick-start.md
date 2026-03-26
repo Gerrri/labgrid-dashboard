@@ -12,7 +12,18 @@ docker compose up -d
 docker compose --profile staging up -d --build
 ```
 
-This starts 3 simulated DUTs (Alpine Linux containers) with Labgrid exporters, providing a realistic test environment.
+This starts 4 simulated DUTs (Alpine Linux containers) with Labgrid exporters, providing a realistic test environment.
+
+The staging setup also exercises exporter SSH bundles so serial command execution can reach exporters over SSH:
+- `exporter-1` uses private key authentication
+- `exporter-4` uses username/password authentication
+- the bundle tree is mounted into the backend at `/app/exporter-ssh`
+
+The four staging targets are wired like this:
+- `exporter-1`: serial command execution
+- `exporter-2`: serial-first with SSH fallback
+- `exporter-3`: SSH using a DUT private key
+- `exporter-4`: SSH using DUT username/password
 
 ## Live Mode (Real Labgrid Coordinator)
 
@@ -21,6 +32,8 @@ This starts 3 simulated DUTs (Alpine Linux containers) with Labgrid exporters, p
 export COORDINATOR_URL=ws://your-coordinator:20408/ws
 docker compose up -d backend frontend
 ```
+
+For live mode, provide the exporter SSH bundle tree as well if you use serial command execution against real exporters.
 
 ## Stop All Services
 

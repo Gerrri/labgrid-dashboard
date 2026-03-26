@@ -11,6 +11,14 @@ presets:
   basic:
     name: "Basic"
     description: "Standard Linux Commands"
+    command_execution:
+      transport_order:
+        - serial
+        - ssh
+      serial:
+        prompt: ".*[#\\$] "
+        login_prompt: "(?i)login: ?"
+        username: "root"
     commands:
       - name: "Linux Version"
         command: "cat /etc/os-release"
@@ -107,3 +115,92 @@ presets:
         command: "cat /proc/loadavg | cut -d' ' -f1-3"
         interval_seconds: 180
         description: "System load average (updates every 3 minutes)"
+
+  staging_serial_only:
+    name: "Staging Serial Only"
+    description: "Staging preset that executes commands only over the serial console"
+    command_execution:
+      transport_order:
+        - serial
+      serial:
+        prompt: ".*[#\\$] "
+        login_prompt: "(?i)login: ?"
+        username: "root"
+        password: "labgrid"
+    commands:
+      - name: "Linux Version"
+        command: "cat /etc/os-release"
+        description: "Shows the Linux distribution"
+      - name: "System Time"
+        command: "date"
+        description: "Current system time"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"
+
+  staging_serial_fallback:
+    name: "Staging Serial With SSH Fallback"
+    description: "Staging preset that tries serial first and falls back to SSH"
+    command_execution:
+      transport_order:
+        - serial
+        - ssh
+      serial:
+        login_prompt: "(?i)login: ?"
+        username: "root"
+        password: "labgrid"
+        prompt: ".*[#\\$] "
+    commands:
+      - name: "Linux Version"
+        command: "cat /etc/os-release"
+        description: "Shows the Linux distribution"
+      - name: "System Time"
+        command: "date"
+        description: "Current system time"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"
+
+  staging_ssh_key:
+    name: "Staging SSH With Key"
+    description: "Staging preset that executes commands over SSH using a private key"
+    command_execution:
+      transport_order:
+        - ssh
+      ssh:
+        keyfile_env: "EXPORTER_3_DUT_SSH_KEYFILE"
+    commands:
+      - name: "Linux Version"
+        command: "cat /etc/os-release"
+        description: "Shows the Linux distribution"
+      - name: "System Time"
+        command: "date"
+        description: "Current system time"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"
+
+  staging_ssh_password:
+    name: "Staging SSH With Password"
+    description: "Staging preset that executes commands over SSH using username/password"
+    command_execution:
+      transport_order:
+        - ssh
+    commands:
+      - name: "Linux Version"
+        command: "cat /etc/os-release"
+        description: "Shows the Linux distribution"
+      - name: "System Time"
+        command: "date"
+        description: "Current system time"
+    scheduled_commands:
+      - name: "Uptime"
+        command: "uptime -p"
+        interval_seconds: 180
+        description: "System uptime (updates every 3 minutes)"

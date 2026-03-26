@@ -27,6 +27,10 @@ This checklist ensures a smooth and reliable release process for the Labgrid Das
   ```bash
   ./scripts/test-production-image.sh
   ```
+- [ ] Exporter SSH bundles verified in staging:
+  - [ ] One exporter works with private key auth
+  - [ ] One exporter works with username/password auth
+  - [ ] Serial commands still reach exporters over SSH
 - [ ] Manual testing completed:
   - [ ] Dashboard loads correctly
   - [ ] WebSocket connection works
@@ -93,6 +97,11 @@ This checklist ensures a smooth and reliable release process for the Labgrid Das
   ```bash
   docker compose -f docker-compose.prod.yml up -d
   ```
+- [ ] Mount exporter SSH bundles and confirm generated SSH runtime files exist:
+  - `~/.ssh/config`
+  - `~/.ssh/labgrid-dashboard/config`
+  - `~/.ssh/labgrid-dashboard/known_hosts`
+  - `~/.ssh/labgrid-dashboard/keys/<exporter-name>` when a private key is used
 - [ ] Verify health endpoints:
   ```bash
   curl http://localhost/health

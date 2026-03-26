@@ -2,11 +2,13 @@
 Tests for the targets API endpoints.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 
+from app.api.routes.targets import set_command_execution_service
+from app.services.command_execution_service import CommandExecutionResult
 from app.services.labgrid_client import TargetAcquiredByOtherError
 
 
@@ -38,6 +40,31 @@ async def test_get_targets_contains_expected_fields(client: AsyncClient):
     assert "acquired_by" in target
     assert "ip_address" in target
     assert "resources" in target
+
+
+@pytest.mark.asyncio
+async def test_get_targets_includes_command_capability_when_service_is_set(
+    client: AsyncClient,
+    mock_targets,
+):
+    """Test that target list responses include backend command capability fields."""
+    execution_service = MagicMock()
+    execution_service.enrich_targets.return_value = mock_targets
+    for target in execution_service.enrich_targets.return_value:
+        target.command_capable = True
+        target.command_transport = "serial"
+        target.command_capability_error = None
+
+    set_command_execution_service(execution_service)
+    try:
+        response = await client.get("/api/targets")
+    finally:
+        set_command_execution_service(None)
+
+    assert response.status_code == 200
+    target = response.json()["targets"][0]
+    assert target["command_capable"] is True
+    assert target["command_transport"] == "serial"
 
 
 @pytest.mark.asyncio
@@ -101,6 +128,37 @@ async def test_execute_command_success(client: AsyncClient):
     assert "output" in data
     assert "timestamp" in data
     assert "exit_code" in data
+
+
+@pytest.mark.asyncio
+async def test_execute_command_uses_command_execution_service(client: AsyncClient, mock_labgrid_client):
+    """Test that the REST endpoint prefers the configured execution service."""
+    execution_service = MagicMock()
+    execution_service.enrich_target.side_effect = lambda target: target
+    execution_service.enrich_targets.side_effect = lambda targets: targets
+    execution_service.execute_command = AsyncMock(
+        return_value=CommandExecutionResult("serial output", 0, "serial")
+    )
+    set_command_execution_service(execution_service)
+
+    try:
+        response = await client.post(
+            "/api/targets/test-dut-1/command",
+            json={"command_name": "Test Command"},
+        )
+    finally:
+        set_command_execution_service(None)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["output"] == "serial output"
+    assert data["execution_transport"] == "serial"
+    execution_service.record_output.assert_called_once()
+    execution_service.execute_command.assert_awaited_once_with(
+        "test-dut-1",
+        "echo test",
+    )
+    mock_labgrid_client.execute_command.assert_not_awaited()
 
 
 @pytest.mark.asyncio

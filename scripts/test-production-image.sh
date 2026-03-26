@@ -10,12 +10,13 @@ NC='\033[0m' # No Color
 IMAGE_NAME="labgrid-dashboard:test"
 CONTAINER_NAME="labgrid-test"
 PORT="8080"
+BUILD_APP_VERSION="${BUILD_APP_VERSION:-vtest-image}"
 
 echo -e "${YELLOW}=== Labgrid Dashboard Production Image Test ===${NC}\n"
 
 # Step 1: Build production image
 echo -e "${YELLOW}Step 1: Building production image...${NC}"
-docker build -t "$IMAGE_NAME" -f Dockerfile.prod .
+docker build --build-arg APP_VERSION="$BUILD_APP_VERSION" -t "$IMAGE_NAME" -f Dockerfile.prod .
 echo -e "${GREEN}✓ Image built successfully${NC}\n"
 
 # Step 2: Stop and remove any existing test container
@@ -32,6 +33,7 @@ docker run -d \
   -e COORDINATOR_URL="${COORDINATOR_URL:-ws://localhost:20408/ws}" \
   -e COORDINATOR_REALM="${COORDINATOR_REALM:-realm1}" \
   -e DEBUG="${DEBUG:-false}" \
+  -e APP_VERSION="stale-runtime-value" \
   -v "$(pwd)/backend/commands.yaml:/app/commands.yaml:ro" \
   -v "$(pwd)/backend/target_presets.json:/app/target_presets.json:ro" \
   "$IMAGE_NAME"
@@ -93,6 +95,16 @@ if curl -s "http://localhost:${PORT}/env-config.js" | grep -q "window.ENV"; then
   echo -e "${GREEN}✓${NC}"
 else
   echo -e "${RED}✗${NC}"
+  exit 1
+fi
+
+echo -n "  - Release version uses image build version: "
+if curl -s "http://localhost:${PORT}/env-config.js" | grep -q "APP_VERSION: \"${BUILD_APP_VERSION}\""; then
+  echo -e "${GREEN}✓${NC}"
+else
+  echo -e "${RED}✗${NC}"
+  echo "Expected APP_VERSION ${BUILD_APP_VERSION} in env-config.js"
+  curl -s "http://localhost:${PORT}/env-config.js"
   exit 1
 fi
 
