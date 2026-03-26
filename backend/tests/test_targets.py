@@ -8,6 +8,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.api.routes.targets import set_command_execution_service
+from app.services.command_execution_service import CommandExecutionResult
 from app.services.labgrid_client import TargetAcquiredByOtherError
 
 
@@ -135,7 +136,9 @@ async def test_execute_command_uses_command_execution_service(client: AsyncClien
     execution_service = MagicMock()
     execution_service.enrich_target.side_effect = lambda target: target
     execution_service.enrich_targets.side_effect = lambda targets: targets
-    execution_service.execute_command = AsyncMock(return_value=("serial output", 0))
+    execution_service.execute_command = AsyncMock(
+        return_value=CommandExecutionResult("serial output", 0, "serial")
+    )
     set_command_execution_service(execution_service)
 
     try:
@@ -149,6 +152,8 @@ async def test_execute_command_uses_command_execution_service(client: AsyncClien
     assert response.status_code == 200
     data = response.json()
     assert data["output"] == "serial output"
+    assert data["execution_transport"] == "serial"
+    execution_service.record_output.assert_called_once()
     execution_service.execute_command.assert_awaited_once_with(
         "test-dut-1",
         "echo test",

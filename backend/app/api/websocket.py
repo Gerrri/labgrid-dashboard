@@ -194,21 +194,26 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             optimistic_target["acquired_by"] = LABGRID_DASHBOARD_USER
             await broadcast_target_update(optimistic_target)
 
+        execution_transport = None
         if _command_execution_service is not None:
-            result_output, exit_code = await _command_execution_service.execute_command(
+            result = await _command_execution_service.execute_command(
                 target_name,
                 command.command,
             )
+            result_output, exit_code = result
+            execution_transport = getattr(result, "execution_transport", None)
         else:
             result_output, exit_code = await _labgrid_client.execute_command(
                 target_name, command.command
             )
+            execution_transport = "ssh"
 
         output = CommandOutput(
             command=command.command,
             output=result_output,
             timestamp=datetime.now(timezone.utc),
             exit_code=exit_code,
+            execution_transport=execution_transport,
         )
     except TargetAcquiredByOtherError as e:
         logger.warning(f"Command execution blocked by existing owner: {e}")
@@ -219,6 +224,7 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             output=f"Error executing command: {str(e)}",
             timestamp=datetime.now(timezone.utc),
             exit_code=1,
+            execution_transport=None,
         )
     except Exception as e:
         logger.error(f"Command execution failed: {e}")
@@ -227,8 +233,12 @@ async def handle_execute_command(websocket: WebSocket, data: Dict[str, Any]) -> 
             output=f"Error executing command: {str(e)}",
             timestamp=datetime.now(timezone.utc),
             exit_code=1,
+            execution_transport=None,
         )
     finally:
+        if _command_execution_service is not None:
+            _command_execution_service.record_output(target_name, output)
+
         if _labgrid_client:
             target_update = rollback_target
             try:

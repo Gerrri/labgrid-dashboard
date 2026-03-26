@@ -32,6 +32,7 @@ from app.api.websocket import set_scheduler_service as set_ws_scheduler_service
 from app.config import get_settings
 from app.services.command_service import CommandService
 from app.services.command_execution_service import CommandExecutionService
+from app.services.exporter_ssh_runtime import ExporterSSHRuntimeService
 from app.services.labgrid_client import LabgridClient
 from app.services.labgrid_client import LabgridConnectionError
 from app.services.preset_service import PresetService
@@ -163,6 +164,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     logger.info("Starting Labgrid Dashboard Backend...")
     reconnect_task: asyncio.Task[None] | None = None
+
+    exporter_ssh_runtime = ExporterSSHRuntimeService(
+        bundles_dir=settings.exporter_ssh_bundles_dir,
+        managed_dir=settings.exporter_ssh_managed_dir or None,
+    )
+    try:
+        exporter_ssh_runtime.setup()
+    except Exception:
+        logger.exception("Failed to prepare exporter SSH runtime assets")
 
     # Initialize command service
     command_service = CommandService(commands_file=settings.commands_file)

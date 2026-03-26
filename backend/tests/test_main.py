@@ -11,8 +11,14 @@ from app.main import (
     reconnect_coordinator_in_background,
     sync_coordinator_runtime,
 )
-from app.models.target import CommandExecutionConfig, SerialCommandExecutionConfig
+from app.models.target import (
+    CommandExecutionConfig,
+    CommandOutput,
+    SerialCommandExecutionConfig,
+    Target,
+)
 from app.services.command_execution_service import (
+    CommandExecutionResult,
     CommandExecutionService,
     TransportExecutionError,
 )
@@ -101,16 +107,20 @@ async def test_command_execution_service_prefers_serial_then_ssh():
         preset_service=preset_service,
     )
     execution_service._try_execute_via_serial = AsyncMock(
-        return_value=("serial ok", 0)
+        return_value=CommandExecutionResult("serial ok", 0, "serial")
     )
-    execution_service._execute_via_ssh = AsyncMock(return_value=("ssh ok", 0))
+    execution_service._try_execute_via_ssh = AsyncMock(
+        return_value=CommandExecutionResult("ssh ok", 0, "ssh")
+    )
 
-    output, exit_code = await execution_service.execute_command("dut-1", "echo test")
+    result = await execution_service.execute_command("dut-1", "echo test")
+    output, exit_code = result
 
     assert output == "serial ok"
     assert exit_code == 0
+    assert result.execution_transport == "serial"
     execution_service._try_execute_via_serial.assert_awaited_once()
-    execution_service._execute_via_ssh.assert_not_awaited()
+    execution_service._try_execute_via_ssh.assert_not_awaited()
     labgrid_client.acquire_target.assert_awaited_once_with("dut-1")
     labgrid_client.release_target_with_retry.assert_awaited_once_with("dut-1")
 
@@ -143,15 +153,18 @@ async def test_command_execution_service_falls_back_to_ssh_when_serial_unavailab
         preset_service=preset_service,
     )
     execution_service._try_execute_via_serial = AsyncMock(return_value=None)
-    execution_service._execute_via_ssh = AsyncMock(return_value=("ssh ok", 0))
-    execution_service._has_available_ssh_resource = MagicMock(return_value=True)
+    execution_service._try_execute_via_ssh = AsyncMock(
+        return_value=CommandExecutionResult("ssh ok", 0, "ssh")
+    )
 
-    output, exit_code = await execution_service.execute_command("dut-1", "echo test")
+    result = await execution_service.execute_command("dut-1", "echo test")
+    output, exit_code = result
 
     assert output == "ssh ok"
     assert exit_code == 0
+    assert result.execution_transport == "ssh"
     execution_service._try_execute_via_serial.assert_awaited_once()
-    execution_service._execute_via_ssh.assert_awaited_once()
+    execution_service._try_execute_via_ssh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -180,18 +193,24 @@ async def test_command_execution_service_falls_back_to_ssh_when_serial_transport
         command_service=command_service,
         preset_service=preset_service,
     )
+    execution_service._reset_target_proxy_connections = MagicMock()
     execution_service._try_execute_via_serial = AsyncMock(
         side_effect=TransportExecutionError("serial login failed")
     )
-    execution_service._execute_via_ssh = AsyncMock(return_value=("ssh ok", 0))
-    execution_service._has_available_ssh_resource = MagicMock(return_value=True)
+    execution_service._try_execute_via_ssh = AsyncMock(
+        return_value=CommandExecutionResult("ssh ok", 0, "ssh")
+    )
 
-    output, exit_code = await execution_service.execute_command("dut-1", "echo test")
+    result = await execution_service.execute_command("dut-1", "echo test")
+    output, exit_code = result
 
     assert output == "ssh ok"
     assert exit_code == 0
+    assert result.execution_transport == "ssh"
     execution_service._try_execute_via_serial.assert_awaited_once()
-    execution_service._execute_via_ssh.assert_awaited_once()
+    execution_service._try_execute_via_ssh.assert_awaited_once()
+    assert execution_service._reset_target_proxy_connections.call_count == 2
+    execution_service._reset_target_proxy_connections.assert_called_with("dut-1")
 
 
 @pytest.mark.asyncio
@@ -220,11 +239,49 @@ async def test_command_execution_service_returns_serial_error_when_no_fallback_e
         command_service=command_service,
         preset_service=preset_service,
     )
+    execution_service._reset_target_proxy_connections = MagicMock()
     execution_service._try_execute_via_serial = AsyncMock(
         side_effect=TransportExecutionError("serial login failed")
     )
 
-    output, exit_code = await execution_service.execute_command("dut-1", "echo test")
+    result = await execution_service.execute_command("dut-1", "echo test")
+    output, exit_code = result
 
     assert output == "Error: serial login failed"
     assert exit_code == 1
+    assert result.execution_transport is None
+
+
+def test_command_execution_service_enrich_target_includes_cached_outputs():
+    """Manual command outputs should be reattached when targets are enriched."""
+    execution_service = CommandExecutionService(
+        labgrid_client=MagicMock(),
+        command_service=MagicMock(),
+        preset_service=MagicMock(),
+    )
+    execution_service.get_target_command_state = MagicMock(
+        return_value=(True, "ssh", None)
+    )
+    execution_service.record_output(
+        "dut-1",
+        CommandOutput(
+            command="cat /etc/os-release",
+            output="ok",
+            exit_code=0,
+            execution_transport="ssh",
+        ),
+    )
+
+    target = Target(
+        name="dut-1",
+        status="available",
+        acquired_by=None,
+        resources=[],
+    )
+
+    enriched = execution_service.enrich_target(target)
+
+    assert enriched.command_capable is True
+    assert enriched.command_transport == "ssh"
+    assert len(enriched.last_command_outputs) == 1
+    assert enriched.last_command_outputs[0].execution_transport == "ssh"

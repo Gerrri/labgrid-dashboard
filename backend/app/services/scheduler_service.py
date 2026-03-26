@@ -98,7 +98,7 @@ class SchedulerService:
         """Set the callback for executing commands on targets.
 
         Args:
-            callback: Async function(target_name, command) -> (output, exit_code)
+            callback: Async function(target_name, command) -> result object or tuple
         """
         self._execute_callback = callback
 
@@ -293,9 +293,20 @@ class SchedulerService:
                 # Execute with lock to prevent concurrent access
                 async with target_lock:
                     try:
-                        output, exit_code = await self._execute_callback(
+                        result = await self._execute_callback(
                             target.name, cmd.command
                         )
+                        execution_transport = None
+                        if isinstance(result, tuple):
+                            output, exit_code = result
+                        else:
+                            output = result.output
+                            exit_code = result.exit_code
+                            execution_transport = getattr(
+                                result,
+                                "execution_transport",
+                                None,
+                            )
 
                         # Store the output
                         scheduled_output = ScheduledCommandOutput(
@@ -303,6 +314,7 @@ class SchedulerService:
                             output=output.strip() if output else "",
                             timestamp=datetime.now(timezone.utc),
                             exit_code=exit_code,
+                            execution_transport=execution_transport,
                         )
 
                         if cmd.name not in self._outputs:

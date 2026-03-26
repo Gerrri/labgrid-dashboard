@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # Labgrid Coordinator settings
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
 
     # Presets configuration (target-to-preset assignments)
     presets_file: str = "target_presets.json"
+
+    # Exporter SSH bundle configuration
+    exporter_ssh_bundles_dir: str = "/app/exporter-ssh"
+    exporter_ssh_managed_dir: str = ""
 
     # Application settings
     app_name: str = "Labgrid Dashboard API"

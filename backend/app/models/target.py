@@ -23,6 +23,10 @@ class CommandOutput(BaseModel):
     output: str = Field(..., description="The command output (stdout/stderr)")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the command was executed")
     exit_code: int = Field(..., description="Command exit code (0 = success)")
+    execution_transport: Optional["ExecutionTransport"] = Field(
+        default=None,
+        description="The transport that was actually used for the execution",
+    )
 
 
 class ScheduledCommandOutput(BaseModel):
@@ -32,6 +36,10 @@ class ScheduledCommandOutput(BaseModel):
     output: str = Field(..., description="The command output (stdout/stderr)")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the command was last executed")
     exit_code: int = Field(default=0, description="Command exit code (0 = success)")
+    execution_transport: Optional["ExecutionTransport"] = Field(
+        default=None,
+        description="The transport that was actually used for the execution",
+    )
 
 
 class ScheduledCommand(BaseModel):
@@ -128,6 +136,63 @@ class SSHCommandExecutionConfig(BaseModel):
         default=None,
         description="Optional named SSH-capable resource to prefer",
     )
+    username: Optional[str] = Field(
+        default=None,
+        description="Static username override for SSH execution",
+    )
+    username_env: Optional[str] = Field(
+        default=None,
+        description="Environment variable containing the SSH username",
+    )
+    password: Optional[str] = Field(
+        default=None,
+        description="Static password override for SSH execution",
+    )
+    password_env: Optional[str] = Field(
+        default=None,
+        description="Environment variable containing the SSH password",
+    )
+    keyfile: Optional[str] = Field(
+        default=None,
+        description="Path to a private key file used for SSH execution",
+    )
+    keyfile_env: Optional[str] = Field(
+        default=None,
+        description="Environment variable containing the private key path",
+    )
+    command_timeout_seconds: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Optional command timeout override for SSH execution",
+    )
+
+    def resolve_username(self) -> str:
+        """Resolve the SSH username from inline value or environment."""
+        if self.username:
+            return self.username
+        if self.username_env:
+            value = os.environ.get(self.username_env)
+            if value:
+                return value
+        return ""
+
+    def resolve_password(self) -> Optional[str]:
+        """Resolve the SSH password from inline value or environment."""
+        if self.password is not None:
+            return self.password
+        if self.password_env:
+            return os.environ.get(self.password_env)
+        return None
+
+    def resolve_keyfile(self) -> str:
+        """Resolve the SSH private key path from inline value or environment."""
+        if self.keyfile:
+            return self.keyfile
+        if self.keyfile_env:
+            value = os.environ.get(self.keyfile_env)
+            if value:
+                return value
+        return ""
 
 
 class CommandExecutionConfig(BaseModel):
